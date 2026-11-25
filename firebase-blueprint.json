@@ -1,0 +1,290 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized Party Committee administrator record.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": ["uid", "email", "displayName", "createdAt"]
+    },
+    "BranchAccess": {
+      "title": "BranchAccess",
+      "description": "Access credential hash and metadata for a branch focal point portal.",
+      "type": "object",
+      "properties": {
+        "unitKey": {
+          "type": "string",
+          "enum": ["cb1", "cb2", "cb3", "cb4"]
+        },
+        "unitName": {
+          "type": "string",
+          "enum": ["Chi bộ 1", "Chi bộ 2", "Chi bộ 3", "Chi bộ 4"]
+        },
+        "passwordHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "hintLabel": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": ["unitKey", "unitName", "passwordHash", "updatedAt"]
+    },
+    "Dossier": {
+      "title": "Dossier",
+      "description": "Collective or individual year-end Party review dossier.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["collective", "individual"]
+        },
+        "branch": {
+          "type": "string",
+          "enum": [
+            "Đảng bộ trường",
+            "Chi bộ 1",
+            "Chi bộ 2",
+            "Chi bộ 3",
+            "Chi bộ 4",
+            "UBKT Đảng uỷ"
+          ]
+        },
+        "unitKey": {
+          "type": "string",
+          "enum": ["dang-bo", "cb1", "cb2", "cb3", "cb4", "ubkt"]
+        },
+        "year": {
+          "type": "integer"
+        },
+        "fullName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "positionGroup": {
+          "type": "string",
+          "enum": [
+            "",
+            "Giữ chức vụ lãnh đạo, quản lý",
+            "Không giữ chức vụ lãnh đạo, quản lý"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Chưa nộp",
+            "Chờ Chi bộ kiểm tra",
+            "Đang rà soát",
+            "Cần bổ sung",
+            "Đã hoàn tất"
+          ]
+        },
+        "selfProposedRating": {
+          "type": "string",
+          "enum": [
+            "",
+            "Hoàn thành xuất sắc nhiệm vụ",
+            "Hoàn thành tốt nhiệm vụ",
+            "Hoàn thành nhiệm vụ",
+            "Không hoàn thành nhiệm vụ"
+          ]
+        },
+        "branchProposedRating": {
+          "type": "string",
+          "enum": [
+            "",
+            "Hoàn thành xuất sắc nhiệm vụ",
+            "Hoàn thành tốt nhiệm vụ",
+            "Hoàn thành nhiệm vụ",
+            "Không hoàn thành nhiệm vụ"
+          ]
+        },
+        "officialRating": {
+          "type": "string",
+          "enum": [
+            "",
+            "Hoàn thành xuất sắc nhiệm vụ",
+            "Hoàn thành tốt nhiệm vụ",
+            "Hoàn thành nhiệm vụ",
+            "Không hoàn thành nhiệm vụ"
+          ]
+        },
+        "documents": {
+          "type": "array",
+          "description": "Bounded checklist of document categories and attachment metadata (max 15 items)."
+        },
+        "revisionRequests": {
+          "type": "array",
+          "description": "Bounded history of revision requests (max 50 items)."
+        },
+        "history": {
+          "type": "array",
+          "description": "Bounded activity log (max 150 items)."
+        },
+        "branchProof": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "type",
+        "branch",
+        "unitKey",
+        "year",
+        "fullName",
+        "positionGroup",
+        "status",
+        "selfProposedRating",
+        "branchProposedRating",
+        "officialRating",
+        "documents",
+        "revisionRequests",
+        "history",
+        "updatedAt"
+      ]
+    },
+    "FileChunk": {
+      "title": "FileChunk",
+      "description": "Chunked base64 payload for an attached PDF, Word, Excel, JPG, or PNG file.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "fileId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "dossierId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "docKey": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "chunkIndex": {
+          "type": "integer"
+        },
+        "totalChunks": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "mimeType": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "extension": {
+          "type": "string",
+          "enum": ["pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png"]
+        },
+        "size": {
+          "type": "integer"
+        },
+        "dataBase64": {
+          "type": "string",
+          "maxLength": 700000
+        },
+        "uploadedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "uploadedByLabel": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "branchProof": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "fileId",
+        "dossierId",
+        "docKey",
+        "chunkIndex",
+        "totalChunks",
+        "name",
+        "mimeType",
+        "extension",
+        "size",
+        "dataBase64",
+        "uploadedAt",
+        "uploadedByLabel"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Verified Party Committee administrator records."
+    },
+    "/branch_access/{unitKey}": {
+      "schema": { "$ref": "#/entities/BranchAccess" },
+      "description": "SHA-256 password hashes for Branch Focal Point portals (cb1..cb4)."
+    },
+    "/dossiers/{dossierId}": {
+      "schema": { "$ref": "#/entities/Dossier" },
+      "description": "All 6 collective and 40+ individual year-end review dossiers."
+    },
+    "/file_chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/FileChunk" },
+      "description": "Chunked attachment storage linked to parent dossiers."
+    }
+  }
+}

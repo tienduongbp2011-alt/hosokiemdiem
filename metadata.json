@@ -1,0 +1,6 @@
+{
+  "name": "QUẢN LÝ HỒ SƠ KIỂM ĐIỂM CUỐI NĂM",
+  "description": "Ứng dụng quản lý tiến độ nộp hồ sơ kiểm điểm, đánh giá, xếp loại tập thể và cá nhân cuối năm của Đảng bộ Trường THPT Thanh Hoà.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

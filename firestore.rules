@@ -1,0 +1,288 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'tienduongbp2011@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidRating(val) {
+      return val is string && val.size() <= 60 && val in [
+        '',
+        'Hoàn thành xuất sắc nhiệm vụ',
+        'Hoàn thành tốt nhiệm vụ',
+        'Hoàn thành nhiệm vụ',
+        'Không hoàn thành nhiệm vụ'
+      ];
+    }
+
+    function isValidStatus(val) {
+      return val is string && val.size() <= 40 && val in [
+        'Chưa nộp',
+        'Chờ Chi bộ kiểm tra',
+        'Đang rà soát',
+        'Cần bổ sung',
+        'Đã hoàn tất'
+      ];
+    }
+
+    function isValidUnitKey(val) {
+      return val is string && val.size() <= 20 && val in [
+        'dang-bo',
+        'cb1',
+        'cb2',
+        'cb3',
+        'cb4',
+        'ubkt'
+      ];
+    }
+
+    function isValidBranchName(val) {
+      return val is string && val.size() <= 40 && val in [
+        'Đảng bộ trường',
+        'Chi bộ 1',
+        'Chi bộ 2',
+        'Chi bộ 3',
+        'Chi bộ 4',
+        'UBKT Đảng uỷ'
+      ];
+    }
+
+    function isValidPositionGroup(val) {
+      return val is string && val.size() <= 60 && val in [
+        '',
+        'Giữ chức vụ lãnh đạo, quản lý',
+        'Không giữ chức vụ lãnh đạo, quản lý'
+      ];
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'createdAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    function isValidBranchAccess(data) {
+      return data.keys().hasAll(['unitKey', 'unitName', 'passwordHash', 'updatedAt'])
+        && data.keys().hasOnly(['unitKey', 'unitName', 'passwordHash', 'hintLabel', 'updatedAt'])
+        && data.unitKey is string && data.unitKey in ['cb1', 'cb2', 'cb3', 'cb4']
+        && data.unitName is string && data.unitName in ['Chi bộ 1', 'Chi bộ 2', 'Chi bộ 3', 'Chi bộ 4']
+        && data.passwordHash is string && data.passwordHash.size() == 64 && data.passwordHash.matches('^[a-f0-9]{64}$')
+        && (!('hintLabel' in data) || (data.hintLabel is string && data.hintLabel.size() <= 120))
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidDossier(data) {
+      return data.keys().hasAll([
+        'id', 'code', 'type', 'branch', 'unitKey', 'year',
+        'fullName', 'positionGroup', 'status',
+        'selfProposedRating', 'branchProposedRating', 'officialRating',
+        'documents', 'revisionRequests', 'history', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'code', 'type', 'branch', 'unitKey', 'year',
+        'fullName', 'positionGroup', 'status',
+        'selfProposedRating', 'branchProposedRating', 'officialRating',
+        'documents', 'revisionRequests', 'history', 'branchProof', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.code is string && data.code.size() >= 1 && data.code.size() <= 40 && data.code.matches('^[a-zA-Z0-9_\\-]+$')
+      && data.type is string && data.type in ['collective', 'individual']
+      && isValidBranchName(data.branch)
+      && isValidUnitKey(data.unitKey)
+      && data.year is int && data.year >= 2020 && data.year <= 2100
+      && data.fullName is string && data.fullName.size() <= 150
+      && isValidPositionGroup(data.positionGroup)
+      && isValidStatus(data.status)
+      && isValidRating(data.selfProposedRating)
+      && isValidRating(data.branchProposedRating)
+      && isValidRating(data.officialRating)
+      && data.documents is list && data.documents.size() <= 15
+      && (data.documents.size() == 0 || data.documents[0] is map)
+      && data.revisionRequests is list && data.revisionRequests.size() <= 50
+      && (data.revisionRequests.size() == 0 || data.revisionRequests[0] is map)
+      && data.history is list && data.history.size() <= 150
+      && (data.history.size() == 0 || data.history[0] is map)
+      && (!('branchProof' in data) || (data.branchProof is string && data.branchProof.size() <= 64))
+      && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidFileChunk(data) {
+      return data.keys().hasAll([
+        'id', 'fileId', 'dossierId', 'docKey', 'chunkIndex', 'totalChunks',
+        'name', 'mimeType', 'extension', 'size', 'dataBase64', 'uploadedAt', 'uploadedByLabel'
+      ])
+      && data.keys().hasOnly([
+        'id', 'fileId', 'dossierId', 'docKey', 'chunkIndex', 'totalChunks',
+        'name', 'mimeType', 'extension', 'size', 'dataBase64', 'uploadedAt', 'uploadedByLabel', 'branchProof'
+      ])
+      && isValidId(data.id)
+      && isValidId(data.fileId)
+      && isValidId(data.dossierId)
+      && data.docKey is string && data.docKey.size() >= 1 && data.docKey.size() <= 64 && data.docKey.matches('^[a-zA-Z0-9_\\-]+$')
+      && data.chunkIndex is int && data.chunkIndex >= 0 && data.chunkIndex < 25
+      && data.totalChunks is int && data.totalChunks >= 1 && data.totalChunks <= 25
+      && data.name is string && data.name.size() >= 1 && data.name.size() <= 255
+      && data.mimeType is string && data.mimeType.size() <= 120
+      && data.extension is string && data.extension in ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png']
+      && data.size is int && data.size >= 0 && data.size <= 8388608
+      && data.dataBase64 is string && data.dataBase64.size() <= 700000
+      && data.uploadedAt is string && data.uploadedAt.size() <= 64
+      && data.uploadedByLabel is string && data.uploadedByLabel.size() <= 120
+      && (!('branchProof' in data) || (data.branchProof is string && data.branchProof.size() <= 64));
+    }
+
+    function matchesBranchProof(unitKey, proof) {
+      return unitKey in ['cb1', 'cb2', 'cb3', 'cb4']
+        && proof is string
+        && proof.size() == 64
+        && exists(/databases/$(database)/documents/branch_access/$(unitKey))
+        && get(/databases/$(database)/documents/branch_access/$(unitKey)).data.passwordHash == proof;
+    }
+
+    // 3. Admins collection (PII isolated to admin/owner only)
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && (isAdmin() || (isVerifiedUser() && request.auth.uid == adminUid));
+      allow list: if isAdmin();
+      allow create: if isValidId(adminUid) && isAdmin() && isValidAdminUser(incoming()) && incoming().uid == adminUid;
+      allow update: if isValidId(adminUid) && isAdmin() && isValidAdminUser(incoming()) && incoming().uid == existing().uid;
+      allow delete: if isValidId(adminUid) && isAdmin();
+    }
+
+    // 4. Branch Access Credentials (get by exact unitKey for login hash check; write strictly Admin)
+    match /branch_access/{unitKey} {
+      allow get: if isValidId(unitKey) && unitKey in ['cb1', 'cb2', 'cb3', 'cb4'];
+      allow list: if isAdmin();
+      allow create: if isValidId(unitKey) && isAdmin() && isValidBranchAccess(incoming()) && incoming().unitKey == unitKey;
+      allow update: if isValidId(unitKey) && isAdmin() && isValidBranchAccess(incoming()) && incoming().unitKey == existing().unitKey;
+      allow delete: if isValidId(unitKey) && isAdmin();
+    }
+
+    // 5. Dossiers Collection (Public directory & 3-tier portal workflow with strict field/state locks)
+    match /dossiers/{dossierId} {
+      allow get: if isValidId(dossierId);
+      allow list: if isAdmin() || (resource.data.year >= 2020 && resource.data.year <= 2100);
+
+      // Only Admin can create or delete dossiers (including seeding and Excel bulk creation)
+      allow create: if isValidId(dossierId) && isAdmin() && isValidDossier(incoming()) && incoming().id == dossierId;
+      allow delete: if isValidId(dossierId) && isAdmin();
+
+      // Action-Based Updates with Terminal State Locking
+      allow update: if isValidId(dossierId) && isValidDossier(incoming())
+        && incoming().id == existing().id
+        && incoming().code == existing().code
+        && incoming().type == existing().type
+        && incoming().year == existing().year
+        && (
+          // Tier 1: Verified Admin can update any mutable field including officialRating and terminal state
+          isAdmin() ||
+
+          // Tier 2: Branch Focal Point with valid branchProof for its own branch (cannot touch dang-bo, ubkt, officialRating, or finalized records)
+          (
+            existing().status != 'Đã hoàn tất'
+            && incoming().unitKey == existing().unitKey
+            && incoming().branch == existing().branch
+            && incoming().officialRating == existing().officialRating
+            && incoming().status in ['Chưa nộp', 'Chờ Chi bộ kiểm tra', 'Đang rà soát', 'Cần bổ sung']
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'fullName', 'positionGroup', 'selfProposedRating', 'branchProposedRating',
+              'documents', 'status', 'revisionRequests', 'history', 'updatedAt', 'branchProof'
+            ])
+            && ('branchProof' in incoming())
+            && matchesBranchProof(existing().unitKey, incoming().branchProof)
+          ) ||
+
+          // Tier 3: Party Member passwordless self-submission on own individual dossier before branch forwards to Party Committee
+          (
+            existing().type == 'individual'
+            && existing().status in ['Chưa nộp', 'Chờ Chi bộ kiểm tra', 'Cần bổ sung']
+            && incoming().unitKey == existing().unitKey
+            && incoming().branch == existing().branch
+            && incoming().fullName == existing().fullName
+            && incoming().branchProposedRating == existing().branchProposedRating
+            && incoming().officialRating == existing().officialRating
+            && incoming().status in ['Chưa nộp', 'Chờ Chi bộ kiểm tra']
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'positionGroup', 'selfProposedRating', 'documents',
+              'status', 'revisionRequests', 'history', 'updatedAt'
+            ])
+          )
+        );
+    }
+
+    // 6. Chunked File Attachments (Master Gate checks parent dossier existence, type, and lock status)
+    match /file_chunks/{chunkId} {
+      allow get: if isValidId(chunkId);
+      allow list: if isAdmin() || (resource.data.fileId is string);
+
+      allow create: if isValidId(chunkId)
+        && isValidFileChunk(incoming())
+        && incoming().id == chunkId
+        && exists(/databases/$(database)/documents/dossiers/$(incoming().dossierId))
+        && (
+          isAdmin() ||
+          (
+            get(/databases/$(database)/documents/dossiers/$(incoming().dossierId)).data.status != 'Đã hoàn tất'
+            && (
+              (
+                get(/databases/$(database)/documents/dossiers/$(incoming().dossierId)).data.type == 'individual'
+                && get(/databases/$(database)/documents/dossiers/$(incoming().dossierId)).data.status in ['Chưa nộp', 'Chờ Chi bộ kiểm tra', 'Cần bổ sung']
+              ) ||
+              (
+                ('branchProof' in incoming())
+                && matchesBranchProof(
+                  get(/databases/$(database)/documents/dossiers/$(incoming().dossierId)).data.unitKey,
+                  incoming().branchProof
+                )
+              )
+            )
+          )
+        );
+
+      allow update: if false;
+
+      // Red Team hardened: non-admin delete restricted strictly to unlocked individual dossiers
+      allow delete: if isValidId(chunkId) && (
+        isAdmin() ||
+        (
+          exists(/databases/$(database)/documents/dossiers/$(existing().dossierId))
+          && get(/databases/$(database)/documents/dossiers/$(existing().dossierId)).data.type == 'individual'
+          && get(/databases/$(database)/documents/dossiers/$(existing().dossierId)).data.status in ['Chưa nộp', 'Chờ Chi bộ kiểm tra', 'Cần bổ sung']
+        )
+      );
+    }
+  }
+}
