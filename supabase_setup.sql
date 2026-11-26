@@ -50,6 +50,17 @@ ALTER TABLE public.branch_access DROP CONSTRAINT IF EXISTS branch_access_unit_ke
 ALTER TABLE public.branch_access ADD CONSTRAINT branch_access_unit_key_check
   CHECK (unit_key IN ('dang-bo', 'cb1', 'cb2', 'cb3', 'cb4', 'ubkt'));
 
+-- Khởi tạo sẵn mật khẩu mặc định cho đủ 6 đơn vị (không ghi đè mật khẩu đã đổi)
+INSERT INTO public.branch_access (unit_key, unit_name, password_hash, hint_label)
+VALUES
+  ('dang-bo', 'Đảng bộ trường', 'd79c069c11868acc975e24a1f27c25d98cb7cc5ed1638304625e393bdce092a1', 'Thư ký Đảng bộ trường – Mặc định (dangbo@2026)'),
+  ('cb1', 'Chi bộ 1', '2db1826642c1e22f56129d2482dfa8ad634ab60f2f4a96e62113d79159563b96', 'Bí thư / Thư ký Chi bộ 1 – Mặc định (cb1@2026)'),
+  ('cb2', 'Chi bộ 2', 'd5d74bd024319f58ebdfd16d53d0a4e0067f575bf3f2d60737ecd1a1eeb97747', 'Bí thư / Thư ký Chi bộ 2 – Mặc định (cb2@2026)'),
+  ('cb3', 'Chi bộ 3', '6fbcc6256beb8a3d6fd0f6378d1cecd6b99e471ef482978b418eec881608282b', 'Bí thư / Thư ký Chi bộ 3 – Mặc định (cb3@2026)'),
+  ('cb4', 'Chi bộ 4', 'dded06ea66faa98cafc88892eb8ea64acca8e9fc1621c2e709be5e10ff09d91d', 'Bí thư / Thư ký Chi bộ 4 – Mặc định (cb4@2026)'),
+  ('ubkt', 'UBKT Đảng uỷ', '134a41affb3514d64e1f7c7690106c9b90c153d8fca72e1f65b4347848443ac9', 'Thư ký UBKT Đảng uỷ – Mặc định (ubkt@2026)')
+ON CONFLICT (unit_key) DO NOTHING;
+
 -- 3. Bật bảo mật mức dòng (Row Level Security)
 ALTER TABLE public.dossiers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.branch_access ENABLE ROW LEVEL SECURITY;

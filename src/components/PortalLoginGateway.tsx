@@ -14,6 +14,7 @@ import {
   Search,
   Shield,
   UserCheck,
+  Vote,
 } from 'lucide-react';
 import { SUPABASE_SETUP_SQL } from '../data/supabaseSetupSql';
 import { verifyBranchPassword } from '../services/supabaseService';
@@ -41,6 +42,7 @@ interface PortalLoginGatewayProps {
   onRetryConnect: () => void;
   onEnterMember: (session: MemberSession) => void;
   onEnterBranch: (session: BranchSession) => void;
+  onEnterVotingBooth: () => void;
   onSignInAdmin: (email: string, password: string) => Promise<void>;
   adminAuthLoading: boolean;
   adminAuthError: string;
@@ -55,6 +57,7 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
   onRetryConnect,
   onEnterMember,
   onEnterBranch,
+  onEnterVotingBooth,
   onSignInAdmin,
   adminAuthLoading,
   adminAuthError,
@@ -661,9 +664,42 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                   >
                     Admin Đảng uỷ
                   </button>
+                  <span aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    onClick={onEnterVotingBooth}
+                    className="underline font-bold text-[#8E1018] hover:text-[#6b0b12]"
+                  >
+                    Bỏ phiếu trực tuyến
+                  </button>
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Direct Passwordless Secret Ballot Portal Banner */}
+          <div className="bg-[#FDF6DE] border-2 border-[#8E1018] p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-[#8E1018] text-[#F6CF62] shrink-0">
+                <Vote className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="font-bold text-base text-[#8E1018]">
+                  Bỏ phiếu kín trực tuyến (Mẫu 4 &amp; Mẫu 5)
+                </div>
+                <p className="text-[13.5px] text-[#4d3a3b] m-0">
+                  Dành cho đảng viên biểu quyết xếp loại tập thể &amp; cá nhân: chọn phiên đang mở và chọn tên của đồng chí để bỏ phiếu ngay (không cần mã phòng, không lưu tên trên phiếu).
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onEnterVotingBooth}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#8E1018] text-white font-bold text-sm hover:bg-[#730B12] whitespace-nowrap shrink-0"
+            >
+              <Vote className="w-4 h-4 text-[#F6CF62]" />
+              Vào bỏ phiếu ngay
+            </button>
           </div>
 
           {/* One-time Supabase SQL Setup Banner placed BELOW the login card so login inputs stay front-and-center */}

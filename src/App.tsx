@@ -8,6 +8,7 @@ import {
   Menu,
   RotateCcw,
   Users,
+  Vote,
   X,
 } from 'lucide-react';
 import { AdminPortalLinksPage } from './components/AdminPortalLinksPage';
@@ -20,11 +21,18 @@ import { OverviewPage } from './components/OverviewPage';
 import { PortalLoginGateway } from './components/PortalLoginGateway';
 import { SummaryExportPage } from './components/SummaryExportPage';
 import { ToastContainer } from './components/ToastContainer';
+import { VotingBoothPage } from './components/VotingBoothPage';
+import {
+  VotingManagerPage,
+  VotingSyncUpdate,
+} from './components/VotingManagerPage';
 import { DEFAULT_YEAR } from './data/seedData';
+import { SUPABASE_SIX_UNIT_UPGRADE_SQL } from './data/supabaseSetupSql';
 import {
   ensureSupabaseSeededByAdmin,
   fetchAllDossiers,
   isMissingTableError,
+  isUnitConstraintOutdatedError,
   resetAllDataAsAdmin,
   saveDossierAsAdmin,
   saveDossierAsBranch,
@@ -58,6 +66,7 @@ const NAV_ITEMS: NavItemConfig[] = [
   { id: 'overview', label: 'Tổng quan', icon: LayoutDashboard },
   { id: 'collective', label: 'Hồ sơ tập thể', icon: FolderOpen },
   { id: 'individual', label: 'Hồ sơ cá nhân', icon: Users },
+  { id: 'voting', label: 'Bỏ phiếu trực tuyến', icon: Vote },
   { id: 'summary', label: 'Tổng hợp và xuất Excel', icon: FileSpreadsheet },
   {
     id: 'access',
@@ -78,16 +87,33 @@ function getInitialPortalFromUrl(): PortalMode {
   if (target === 'dang-vien') return 'member';
   if (target === 'chi-bo') return 'branch';
   if (target === 'admin') return 'admin';
+  if (target === 'bo-phieu') return 'voting';
   return 'gateway';
+}
+
+function getVotingSessionIdFromUrl(): string {
+  const params = new URLSearchParams(window.location.search);
+  return (params.get('phien') ?? '').trim();
 }
 
 export default function App() {
   const [initialPortal, setInitialPortal] = useState<PortalMode>(() =>
     getInitialPortalFromUrl()
   );
+  const [urlVotingSessionId, setUrlVotingSessionId] = useState<string>(() =>
+    getVotingSessionIdFromUrl()
+  );
+  const [showVotingBooth, setShowVotingBooth] = useState<boolean>(
+    () => getInitialPortalFromUrl() === 'voting'
+  );
 
   useEffect(() => {
-    const onUrlChange = () => setInitialPortal(getInitialPortalFromUrl());
+    const onUrlChange = () => {
+      const nextPortal = getInitialPortalFromUrl();
+      setInitialPortal(nextPortal);
+      setUrlVotingSessionId(getVotingSessionIdFromUrl());
+      setShowVotingBooth(nextPortal === 'voting');
+    };
     window.addEventListener('popstate', onUrlChange);
     window.addEventListener('hashchange', onUrlChange);
     return () => {
@@ -99,6 +125,7 @@ export default function App() {
   const [dossiers, setDossiers] = useState<Dossier[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [needsSchemaSetup, setNeedsSchemaSetup] = useState(false);
+  const [needsSixUnitSqlUpgrade, setNeedsSixUnitSqlUpgrade] = useState(false);
   const [retryCounter, setRetryCounter] = useState(0);
   const [activeNav, setActiveNav] = useState<NavSection>('overview');
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(
@@ -181,11 +208,12 @@ export default function App() {
 
       try {
         const seeded = await ensureSupabaseSeededByAdmin();
+        setNeedsSixUnitSqlUpgrade(seeded.needsSixUnitSqlUpgrade);
         await refreshDossiersNow();
         if (seeded.seededDossiersCount > 0 || seeded.seededAccessCount > 0) {
           pushToast(
             'success',
-            `Đã tự động khởi tạo ${seeded.seededDossiersCount} hồ sơ năm 2026 và mật khẩu 4 Chi bộ trên Supabase.`
+            `Đã tự động khởi tạo ${seeded.seededDossiersCount} hồ sơ năm 2026 và mật khẩu các đơn vị trên Supabase.`
           );
         }
       } catch (err) {
@@ -195,8 +223,8 @@ export default function App() {
             'error',
             'Bảng dữ liệu chưa tồn tại trên Supabase. Vui lòng chạy tệp supabase_setup.sql trong SQL Editor.'
           );
-        } else {
-          console.error('Supabase seed error:', err);
+        } else if (isUnitConstraintOutdatedError(err)) {
+          setNeedsSixUnitSqlUpgrade(true);
         }
       }
     },
@@ -209,7 +237,13 @@ export default function App() {
     let active = true;
 
     const checkExistingSession = async () => {
-      if (initialPortal === 'member' || initialPortal === 'branch') return;
+      if (
+        initialPortal === 'member' ||
+        initialPortal === 'branch' ||
+        initialPortal === 'voting'
+      ) {
+        return;
+      }
       try {
         const { data } = await supabase.auth.getSession();
         const user = data.session?.user;
@@ -230,7 +264,13 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, authSession) => {
         if (!active) return;
-        if (initialPortal === 'member' || initialPortal === 'branch') return;
+        if (
+          initialPortal === 'member' ||
+          initialPortal === 'branch' ||
+          initialPortal === 'voting'
+        ) {
+          return;
+        }
         if (authSession?.user) {
           void hydrateAdminSession(
             authSession.user.id,
@@ -294,11 +334,12 @@ export default function App() {
 
       try {
         const seeded = await ensureSupabaseSeededByAdmin();
+        setNeedsSixUnitSqlUpgrade(seeded.needsSixUnitSqlUpgrade);
         await refreshDossiersNow();
         if (seeded.seededDossiersCount > 0 || seeded.seededAccessCount > 0) {
           pushToast(
             'success',
-            `Đăng nhập Admin thành công! Đã khởi tạo ${seeded.seededDossiersCount} hồ sơ năm 2026 và mật khẩu 4 Chi bộ trên Supabase.`
+            `Đăng nhập Admin thành công! Đã khởi tạo ${seeded.seededDossiersCount} hồ sơ năm 2026 và mật khẩu các đơn vị trên Supabase.`
           );
         } else {
           pushToast('success', 'Đăng nhập Cổng Admin Đảng uỷ thành công.');
@@ -308,8 +349,11 @@ export default function App() {
           setNeedsSchemaSetup(true);
           setSession(null);
           setAdminAuthError(
-            'Tài khoản Admin hợp lệ nhưng chưa chạy mã SQL khởi tạo bảng trên Supabase. Vui lòng bấm "Sao chép mã SQL khởi tạo" ở khung phía trên rồi chạy trong SQL Editor của Supabase.'
+            'Tài khoản Admin hợp lệ nhưng chưa chạy mã SQL khởi tạo bảng trên Supabase. Vui lòng bấm "Sao chép mã SQL khởi tạo" ở khung phía dưới rồi chạy trong SQL Editor của Supabase.'
           );
+        } else if (isUnitConstraintOutdatedError(seedErr)) {
+          setNeedsSixUnitSqlUpgrade(true);
+          pushToast('success', 'Đăng nhập Cổng Admin Đảng uỷ thành công.');
         } else {
           pushToast('success', 'Đăng nhập Cổng Admin Đảng uỷ thành công.');
         }
@@ -471,6 +515,116 @@ export default function App() {
     }
   };
 
+  const handleSyncVotingRatings = async (updates: VotingSyncUpdate[]) => {
+    if (!session || session.type === 'member' || updates.length === 0) return;
+
+    const nowIso = new Date().toISOString();
+    const actorRole =
+      session.type === 'admin'
+        ? 'Admin Đảng uỷ'
+        : getUnitSecretaryRoleLabel(session.branch);
+
+    const updatedDossiers: Dossier[] = [];
+    let skippedLocked = 0;
+
+    for (const upd of updates) {
+      const existing = dossiers.find((d) => d.id === upd.dossierId);
+      if (!existing) continue;
+      if (session.type === 'branch') {
+        if (existing.unitKey !== session.unitKey) continue;
+        if (existing.status === 'Đã hoàn tất') {
+          skippedLocked += 1;
+          continue;
+        }
+      }
+
+      const fieldLabel =
+        upd.targetField === 'officialRating'
+          ? 'Mức xếp loại chính thức'
+          : 'Mức chi bộ/đơn vị đề nghị';
+
+      const nextDossier: Dossier = {
+        ...existing,
+        [upd.targetField]: upd.rating,
+        updatedAt: nowIso,
+        history: [
+          ...existing.history,
+          {
+            id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            timestamp: nowIso,
+            role: actorRole,
+            action: `Đồng bộ kết quả bỏ phiếu (${fieldLabel}: ${upd.rating})`,
+            note: `Nguồn: ${upd.sessionTitle}`,
+          },
+        ],
+      };
+      updatedDossiers.push(nextDossier);
+    }
+
+    if (updatedDossiers.length === 0) {
+      pushToast(
+        'info',
+        skippedLocked > 0
+          ? `Không có hồ sơ nào được cập nhật vì ${skippedLocked} hồ sơ đã bị Đảng uỷ khoá.`
+          : 'Không tìm thấy hồ sơ liên kết phù hợp để đồng bộ.'
+      );
+      return;
+    }
+
+    try {
+      if (session.type === 'admin') {
+        await saveManyDossiersAsAdmin(updatedDossiers);
+      } else {
+        for (const item of updatedDossiers) {
+          await saveDossierAsBranch(item, session.branchProof);
+        }
+      }
+      await refreshDossiersNow();
+      pushToast(
+        'success',
+        `Đã đồng bộ kết quả kiểm phiếu vào ${updatedDossiers.length} hồ sơ kiểm điểm${
+          skippedLocked > 0 ? ` (bỏ qua ${skippedLocked} hồ sơ đã khoá)` : ''
+        }.`
+      );
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Không thể đồng bộ kết quả bỏ phiếu lên Supabase.';
+      pushToast('error', msg);
+    }
+  };
+
+  const handleEnterVotingBooth = () => {
+    setShowVotingBooth(true);
+    const url = new URL(window.location.href);
+    url.searchParams.set('cong', 'bo-phieu');
+    window.history.replaceState({}, '', url.toString());
+  };
+
+  const handleExitVotingBooth = () => {
+    setShowVotingBooth(false);
+    setUrlVotingSessionId('');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('cong');
+    url.searchParams.delete('phien');
+    window.history.replaceState({}, '', url.toString());
+  };
+
+  // RENDER DEDICATED PASSWORDLESS VOTING BOOTH (?cong=bo-phieu)
+  if (!session && showVotingBooth) {
+    return (
+      <>
+        <VotingBoothPage
+          initialSessionId={urlVotingSessionId}
+          onExitToGateway={handleExitVotingBooth}
+          onNotify={pushToast}
+        />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
+    );
+  }
+
   // RENDER GATEWAY IF NOT SIGNED IN TO ANY PORTAL
   if (!session) {
     return (
@@ -483,6 +637,7 @@ export default function App() {
           onRetryConnect={handleRetryConnect}
           onEnterMember={handleEnterMember}
           onEnterBranch={handleEnterBranch}
+          onEnterVotingBooth={handleEnterVotingBooth}
           onSignInAdmin={handleSignInAdmin}
           adminAuthLoading={adminAuthLoading}
           adminAuthError={adminAuthError}
@@ -745,6 +900,61 @@ export default function App() {
             )}
           </div>
 
+          {/* One-time notice if Supabase branch_access still only allows 4 units */}
+          {session.type === 'admin' && needsSixUnitSqlUpgrade && (
+            <div className="bg-[#FCF8E8] border-b-2 border-[#D4A73E] px-4 lg:px-7 py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm text-[#4b3512]">
+              <span>
+                <strong>Cập nhật Supabase (làm 1 lần):</strong> Cần chạy đoạn SQL nâng cấp để kích hoạt mật khẩu{' '}
+                <strong>Thư ký Đảng bộ trường</strong> (dangbo@2026) và{' '}
+                <strong>Thư ký UBKT Đảng uỷ</strong> (ubkt@2026).
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard
+                      .writeText(SUPABASE_SIX_UNIT_UPGRADE_SQL)
+                      .then(() =>
+                        pushToast(
+                          'success',
+                          'Đã sao chép SQL nâng cấp 2 tài khoản Thư ký. Dán vào Supabase -> SQL Editor -> bấm Run.'
+                        )
+                      );
+                  }}
+                  className="px-3 py-1 bg-[#8E1018] text-white font-bold text-xs hover:bg-[#730B12] whitespace-nowrap"
+                >
+                  Sao chép SQL mở khoá 2 đơn vị
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void ensureSupabaseSeededByAdmin()
+                      .then((res) => {
+                        setNeedsSixUnitSqlUpgrade(res.needsSixUnitSqlUpgrade);
+                        if (!res.needsSixUnitSqlUpgrade) {
+                          pushToast(
+                            'success',
+                            'Đã kích hoạt thành công tài khoản Thư ký Đảng bộ trường và UBKT Đảng uỷ!'
+                          );
+                        } else {
+                          pushToast(
+                            'info',
+                            'Supabase vẫn chưa chạy đoạn SQL nâng cấp. Vui lòng dán vào SQL Editor và bấm Run.'
+                          );
+                        }
+                      })
+                      .catch(() => {
+                        pushToast('error', 'Không thể kiểm tra lại trạng thái Supabase.');
+                      });
+                  }}
+                  className="px-3 py-1 bg-white border border-[#8E1018] text-[#8E1018] font-bold text-xs hover:bg-[#FBF0C9] whitespace-nowrap"
+                >
+                  Kiểm tra lại
+                </button>
+              </div>
+            </div>
+          )}
+
           <main className="flex-1 p-4 lg:p-7 max-w-[1440px] w-full mx-auto">
             {isLoadingData ? (
               <div className="py-16 text-center text-lg font-bold text-[#8E1018]">
@@ -791,8 +1001,18 @@ export default function App() {
                 onCommitExcelImport={handleCommitExcelImport}
                 onNotify={pushToast}
               />
+            ) : activeNav === 'voting' ? (
+              <VotingManagerPage
+                session={session}
+                dossiers={dossiers}
+                onSyncRatingsToDossiers={handleSyncVotingRatings}
+                onNotify={pushToast}
+              />
             ) : activeNav === 'access' && session.type === 'admin' ? (
-              <AdminPortalLinksPage onNotify={pushToast} />
+              <AdminPortalLinksPage
+                needsSixUnitSqlUpgrade={needsSixUnitSqlUpgrade}
+                onNotify={pushToast}
+              />
             ) : (
               <SummaryExportPage
                 dossiers={dossiers}

@@ -127,6 +127,16 @@ export function isMissingTableError(err: unknown): boolean {
   );
 }
 
+export function isUnitConstraintOutdatedError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: string; message?: string };
+  const code = e.code ?? '';
+  const msg = (e.message ?? '').toLowerCase();
+  return (
+    code === '23514' || msg.includes('branch_access_unit_key_check')
+  );
+}
+
 export async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -205,9 +215,11 @@ export function subscribeDossiersRealtime(
 export async function ensureSupabaseSeededByAdmin(): Promise<{
   seededDossiersCount: number;
   seededAccessCount: number;
+  needsSixUnitSqlUpgrade: boolean;
 }> {
   let seededDossiersCount = 0;
   let seededAccessCount = 0;
+  let needsSixUnitSqlUpgrade = false;
 
   const { data: existingDossiers, error: fetchErr } = await supabase
     .from('dossiers')
@@ -239,14 +251,15 @@ export async function ensureSupabaseSeededByAdmin(): Promise<{
     ((existingAccess ?? []) as { unit_key: string }[]).map((r) => r.unit_key)
   );
 
-  const unitKeys: UnitKey[] = ['dang-bo', 'cb1', 'cb2', 'cb3', 'cb4', 'ubkt'];
-  const missingAccessRows: BranchAccessDbRow[] = [];
+  // 1. Seed the 4 branch keys first (always supported even on older DB schema)
+  const coreBranchKeys: UnitKey[] = ['cb1', 'cb2', 'cb3', 'cb4'];
+  const missingCoreRows: BranchAccessDbRow[] = [];
 
-  for (const unitKey of unitKeys) {
+  for (const unitKey of coreBranchKeys) {
     if (!existingUnitKeys.has(unitKey)) {
       const def = DEFAULT_BRANCH_PASSWORDS[unitKey];
       const hash = await sha256Hex(def.password);
-      missingAccessRows.push({
+      missingCoreRows.push({
         unit_key: unitKey,
         unit_name: UNIT_NAME_BY_KEY[unitKey],
         password_hash: hash,
@@ -256,18 +269,55 @@ export async function ensureSupabaseSeededByAdmin(): Promise<{
     }
   }
 
-  if (missingAccessRows.length > 0) {
-    const { error: accessInsertErr } = await supabase
+  if (missingCoreRows.length > 0) {
+    const { error: coreErr } = await supabase
       .from('branch_access')
-      .upsert(missingAccessRows, {
+      .upsert(missingCoreRows, {
         onConflict: 'unit_key',
         ignoreDuplicates: true,
       });
-    if (accessInsertErr) throw accessInsertErr;
-    seededAccessCount = missingAccessRows.length;
+    if (coreErr) throw coreErr;
+    seededAccessCount += missingCoreRows.length;
   }
 
-  return { seededDossiersCount, seededAccessCount };
+  // 2. Seed dang-bo & ubkt separately; if DB still has the 4-unit CHECK constraint (23514),
+  //    flag needsSixUnitSqlUpgrade cleanly instead of failing the Admin session.
+  const extendedUnitKeys: UnitKey[] = ['dang-bo', 'ubkt'];
+  const missingExtendedRows: BranchAccessDbRow[] = [];
+
+  for (const unitKey of extendedUnitKeys) {
+    if (!existingUnitKeys.has(unitKey)) {
+      const def = DEFAULT_BRANCH_PASSWORDS[unitKey];
+      const hash = await sha256Hex(def.password);
+      missingExtendedRows.push({
+        unit_key: unitKey,
+        unit_name: UNIT_NAME_BY_KEY[unitKey],
+        password_hash: hash,
+        hint_label: def.hintLabel,
+        updated_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  if (missingExtendedRows.length > 0) {
+    const { error: extErr } = await supabase
+      .from('branch_access')
+      .upsert(missingExtendedRows, {
+        onConflict: 'unit_key',
+        ignoreDuplicates: true,
+      });
+    if (extErr) {
+      if (isUnitConstraintOutdatedError(extErr)) {
+        needsSixUnitSqlUpgrade = true;
+      } else {
+        throw extErr;
+      }
+    } else {
+      seededAccessCount += missingExtendedRows.length;
+    }
+  }
+
+  return { seededDossiersCount, seededAccessCount, needsSixUnitSqlUpgrade };
 }
 
 export async function verifyBranchPassword(
@@ -330,7 +380,14 @@ export async function updateBranchAccessPassword(
     },
     { onConflict: 'unit_key' }
   );
-  if (error) throw error;
+  if (error) {
+    if (isUnitConstraintOutdatedError(error)) {
+      throw new Error(
+        'Bảng branch_access trên Supabase chưa mở khoá Đảng bộ trường và UBKT Đảng uỷ. Vui lòng bấm "Sao chép SQL mở khoá 2 đơn vị" và chạy trong Supabase SQL Editor.'
+      );
+    }
+    throw error;
+  }
 
   return {
     unitKey,

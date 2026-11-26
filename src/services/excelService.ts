@@ -8,7 +8,13 @@ import {
   POSITION_GROUPS,
   PositionGroup,
   RATING_OPTIONS,
+  SHORT_RATING_OPTIONS,
+  SHORT_TO_RATING,
+  ShortRating,
   UnitName,
+  VOTING_CATEGORY_META,
+  VotingSession,
+  VotingTallyResult,
   countDossierAttachments,
   formatDateTimeVN,
   formatDateVN,
@@ -492,3 +498,149 @@ export function exportSummaryToExcel(
   XLSX.writeFile(wb, fileName);
   return fileName;
 }
+
+function resolveMajorityShortRating(
+  counts: Record<ShortRating, number> | undefined,
+  totalBallots: number
+): ShortRating | '' {
+  if (!counts || totalBallots <= 0) return '';
+  let best: ShortRating | '' = '';
+  let bestVal = -1;
+  for (const opt of SHORT_RATING_OPTIONS) {
+    const val = counts[opt.code] ?? 0;
+    if (val > bestVal) {
+      bestVal = val;
+      best = opt.code;
+    }
+  }
+  return bestVal > 0 ? best : '';
+}
+
+export function exportVotingResultToExcel(
+  session: VotingSession,
+  tally: VotingTallyResult,
+  attendanceCount: number
+): string {
+  const isMau4 = session.template === 'mau4';
+  const totalBallots = tally.totalBallots;
+
+  const formatCell = (count: number) => {
+    const pct =
+      totalBallots > 0 ? ((count / totalBallots) * 100).toFixed(1) : '0.0';
+    return `${count}/${totalBallots} (${pct}%)`;
+  };
+
+  // Sheet 1: Kết quả kiểm phiếu
+  const resultRows = session.candidates.map((cand, index) => {
+    const counts = tally.tallies[cand.id];
+    const htxs = counts?.HTXSNV ?? 0;
+    const htt = counts?.HTTNV ?? 0;
+    const ht = counts?.HTNV ?? 0;
+    const kht = counts?.KHTNV ?? 0;
+    const majority = resolveMajorityShortRating(counts, totalBallots);
+
+    if (isMau4) {
+      return {
+        STT: index + 1,
+        'Tên tổ chức đảng, tập thể lãnh đạo, quản lý': cand.name,
+        'Tự nhận mức xếp loại': cand.selfRatingShort || '—',
+        'Hoàn thành xuất sắc nhiệm vụ': formatCell(htxs),
+        'Hoàn thành tốt nhiệm vụ': formatCell(htt),
+        'Hoàn thành nhiệm vụ': formatCell(ht),
+        'Không hoàn thành nhiệm vụ': formatCell(kht),
+        'Mức đạt đa số': majority ? SHORT_TO_RATING[majority] : 'Chưa có phiếu',
+      };
+    }
+
+    return {
+      STT: index + 1,
+      'Họ và tên': cand.name,
+      'Chức vụ': cand.position || 'ĐV',
+      'Tự nhận mức': cand.selfRatingShort || '—',
+      'Hoàn thành xuất sắc nhiệm vụ': formatCell(htxs),
+      'Hoàn thành tốt nhiệm vụ': formatCell(htt),
+      'Hoàn thành nhiệm vụ': formatCell(ht),
+      'Không hoàn thành nhiệm vụ': formatCell(kht),
+      'Mức đạt đa số': majority ? SHORT_TO_RATING[majority] : 'Chưa có phiếu',
+    };
+  });
+
+  const wsResult = XLSX.utils.json_to_sheet(
+    resultRows.length > 0
+      ? resultRows
+      : [{ STT: '', 'Thông báo': 'Chưa có đối tượng trong phiên bỏ phiếu' }]
+  );
+  wsResult['!cols'] = isMau4
+    ? [
+        { wch: 6 },
+        { wch: 36 },
+        { wch: 20 },
+        { wch: 24 },
+        { wch: 22 },
+        { wch: 20 },
+        { wch: 24 },
+        { wch: 28 },
+      ]
+    : [
+        { wch: 6 },
+        { wch: 28 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 24 },
+        { wch: 22 },
+        { wch: 20 },
+        { wch: 24 },
+        { wch: 28 },
+      ];
+
+  // Sheet 2: Thông tin phiên họp
+  const infoRows = [
+    { 'Hạng mục': 'Tên phiên bỏ phiếu', 'Thông tin': session.title },
+    {
+      'Hạng mục': 'Loại phiên',
+      'Thông tin': VOTING_CATEGORY_META[session.category].label,
+    },
+    {
+      'Hạng mục': 'Biểu mẫu áp dụng',
+      'Thông tin': isMau4
+        ? 'Mẫu 4 – Phiếu biểu quyết tập thể'
+        : 'Mẫu 5 – Phiếu biểu quyết đảng viên, cán bộ lãnh đạo',
+    },
+    { 'Hạng mục': 'Đơn vị tổ chức', 'Thông tin': session.unitName },
+    { 'Hạng mục': 'Năm đánh giá', 'Thông tin': String(session.year) },
+    {
+      'Hạng mục': 'Ngày họp',
+      'Thông tin': session.meetingDate ? formatDateVN(session.meetingDate) : '—',
+    },
+    {
+      'Hạng mục': 'Tổng cử tri thuộc diện bỏ phiếu',
+      'Thông tin': String(session.eligibleVoters.length),
+    },
+    {
+      'Hạng mục': 'Số đồng chí đã điểm danh bỏ phiếu',
+      'Thông tin': String(attendanceCount),
+    },
+    {
+      'Hạng mục': 'Tổng số phiếu hợp lệ thu về',
+      'Thông tin': String(totalBallots),
+    },
+    {
+      'Hạng mục': 'Thời điểm chốt kiểm phiếu',
+      'Thông tin': session.closedAt ? formatDateTimeVN(session.closedAt) : '—',
+    },
+  ];
+
+  const wsInfo = XLSX.utils.json_to_sheet(infoRows);
+  wsInfo['!cols'] = [{ wch: 34 }, { wch: 50 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsResult, 'Kết quả kiểm phiếu');
+  XLSX.utils.book_append_sheet(wb, wsInfo, 'Thông tin phiên họp');
+
+  const safeUnit = session.unitKey.replace(/[^a-z0-9_-]/gi, '');
+  const templateTag = isMau4 ? 'Mau4' : 'Mau5';
+  const fileName = `Ket_qua_kiem_phieu_${templateTag}_${safeUnit}_${session.year}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  return fileName;
+}
+

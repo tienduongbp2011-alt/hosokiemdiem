@@ -35,12 +35,13 @@ export type DocumentRequirement =
   | 'Theo trường hợp'
   | 'Không áp dụng';
 
-export type PortalMode = 'gateway' | 'member' | 'branch' | 'admin';
+export type PortalMode = 'gateway' | 'member' | 'branch' | 'admin' | 'voting';
 
 export type NavSection =
   | 'overview'
   | 'collective'
   | 'individual'
+  | 'voting'
   | 'summary'
   | 'access';
 
@@ -390,3 +391,134 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
+
+// ============================================================
+// ONLINE SECRET BALLOT VOTING TYPES (MẪU 4 & MẪU 5)
+// ============================================================
+
+export type VotingTemplate = 'mau4' | 'mau5';
+
+export type VotingCategory =
+  | 'collective_branch'
+  | 'collective_party'
+  | 'collective_ubkt'
+  | 'individual_committee'
+  | 'individual_member';
+
+export type VotingStatus = 'draft' | 'open' | 'closed';
+
+export type ShortRating = 'HTXSNV' | 'HTTNV' | 'HTNV' | 'KHTNV';
+
+export type HtxsnvMode = 'warn' | 'strict' | 'off';
+
+export const SHORT_RATING_OPTIONS: {
+  code: ShortRating;
+  label: Exclude<RatingLevel, ''>;
+}[] = [
+  { code: 'HTXSNV', label: 'Hoàn thành xuất sắc nhiệm vụ' },
+  { code: 'HTTNV', label: 'Hoàn thành tốt nhiệm vụ' },
+  { code: 'HTNV', label: 'Hoàn thành nhiệm vụ' },
+  { code: 'KHTNV', label: 'Không hoàn thành nhiệm vụ' },
+];
+
+export const RATING_TO_SHORT: Record<Exclude<RatingLevel, ''>, ShortRating> = {
+  'Hoàn thành xuất sắc nhiệm vụ': 'HTXSNV',
+  'Hoàn thành tốt nhiệm vụ': 'HTTNV',
+  'Hoàn thành nhiệm vụ': 'HTNV',
+  'Không hoàn thành nhiệm vụ': 'KHTNV',
+};
+
+export const SHORT_TO_RATING: Record<ShortRating, Exclude<RatingLevel, ''>> = {
+  HTXSNV: 'Hoàn thành xuất sắc nhiệm vụ',
+  HTTNV: 'Hoàn thành tốt nhiệm vụ',
+  HTNV: 'Hoàn thành nhiệm vụ',
+  KHTNV: 'Không hoàn thành nhiệm vụ',
+};
+
+export const VOTING_CATEGORY_META: Record<
+  VotingCategory,
+  { label: string; template: VotingTemplate; description: string }
+> = {
+  collective_branch: {
+    label: 'Xếp loại tập thể Chi bộ (Mẫu 4)',
+    template: 'mau4',
+    description: 'Biểu quyết xếp loại chất lượng tập thể Chi bộ 1, 2, 3, 4',
+  },
+  collective_party: {
+    label: 'Xếp loại tập thể Đảng bộ trường (Mẫu 4)',
+    template: 'mau4',
+    description: 'Biểu quyết xếp loại chất lượng tập thể Đảng bộ Trường THPT Thanh Hoà',
+  },
+  collective_ubkt: {
+    label: 'Xếp loại tập thể UBKT Đảng uỷ (Mẫu 4)',
+    template: 'mau4',
+    description: 'Biểu quyết xếp loại chất lượng tập thể Ủy ban Kiểm tra Đảng uỷ',
+  },
+  individual_committee: {
+    label: 'Xếp loại Đảng uỷ viên (Mẫu 5)',
+    template: 'mau5',
+    description: 'Biểu quyết xếp loại các đồng chí Uỷ viên Ban Chấp hành Đảng bộ',
+  },
+  individual_member: {
+    label: 'Xếp loại Đảng viên theo Chi bộ (Mẫu 5)',
+    template: 'mau5',
+    description: 'Biểu quyết đánh giá, xếp loại đảng viên và cán bộ lãnh đạo, quản lý trong Chi bộ',
+  },
+};
+
+export interface VotingCandidate {
+  id: string;
+  dossierId?: string;
+  stt: number;
+  name: string;
+  position: string; // e.g., P.BTĐU, ĐUV-BTCB, P.BTCB, CUV, ĐV (for Mẫu 5)
+  selfRatingShort: ShortRating | '';
+}
+
+export interface VotingVoter {
+  id: string;
+  name: string;
+  code?: string;
+  branch?: string;
+  position?: string;
+}
+
+export interface VotingSession {
+  id: string;
+  title: string;
+  template: VotingTemplate;
+  category: VotingCategory;
+  unitKey: UnitKey;
+  unitName: UnitName;
+  year: number;
+  meetingDate: string; // YYYY-MM-DD
+  status: VotingStatus;
+  htxsnvMode: HtxsnvMode;
+  maxHtxsnvPercent: number;
+  candidates: VotingCandidate[];
+  eligibleVoters: VotingVoter[];
+  createdBy: string;
+  createdAt: string;
+  closedAt?: string | null;
+}
+
+export interface VoterAttendance {
+  sessionId: string;
+  voterId: string;
+  voterName: string;
+  votedAt: string;
+}
+
+export interface CandidateTally {
+  HTXSNV: number;
+  HTTNV: number;
+  HTNV: number;
+  KHTNV: number;
+}
+
+export interface VotingTallyResult {
+  status: VotingStatus;
+  totalBallots: number;
+  tallies: Record<string, CandidateTally>;
+}
+

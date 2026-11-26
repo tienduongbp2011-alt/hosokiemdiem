@@ -9,7 +9,11 @@ import {
   Save,
 } from 'lucide-react';
 import { DEFAULT_BRANCH_PASSWORDS } from '../data/seedData';
-import { SUPABASE_SETUP_SQL } from '../data/supabaseSetupSql';
+import {
+  SUPABASE_SETUP_SQL,
+  SUPABASE_SIX_UNIT_UPGRADE_SQL,
+  SUPABASE_VOTING_SQL,
+} from '../data/supabaseSetupSql';
 import {
   fetchAllBranchAccess,
   updateBranchAccessPassword,
@@ -24,6 +28,7 @@ import {
 } from '../types';
 
 interface AdminPortalLinksPageProps {
+  needsSixUnitSqlUpgrade?: boolean;
   onNotify: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
@@ -37,6 +42,7 @@ const UNIT_ACCESS_LIST: { key: UnitKey; name: UnitName }[] = [
 ];
 
 export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
+  needsSixUnitSqlUpgrade = false,
   onNotify,
 }) => {
   const [accessRecords, setAccessRecords] = useState<BranchAccessRecord[]>([]);
@@ -69,6 +75,14 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
       description:
         'Dành riêng cho Đảng uỷ viên phụ trách hồ sơ đăng nhập bằng tài khoản Email & Mật khẩu quản trị trên Supabase.',
       url: `${baseUrl}?cong=admin`,
+    },
+    {
+      id: 'voting',
+      title:
+        '4. Đường link Bỏ phiếu kín trực tuyến – Mẫu 4 & Mẫu 5 (Gửi nhóm Zalo khi họp)',
+      description:
+        'Đảng viên mở link trên điện thoại hoặc máy tính, chọn phiên họp đang mở và chọn tên của mình là vào bỏ phiếu kín ngay (không cần mã phòng, phiếu ẩn danh tuyệt đối).',
+      url: `${baseUrl}?cong=bo-phieu`,
     },
   ];
 
@@ -144,8 +158,12 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
         'success',
         `Đã cập nhật mật khẩu đăng nhập cho ${getUnitSecretaryRoleLabel(unitName)}.`
       );
-    } catch {
-      onNotify('error', `Không thể cập nhật mật khẩu cho ${unitName}.`);
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : `Không thể cập nhật mật khẩu cho ${unitName}.`;
+      onNotify('error', msg);
     } finally {
       setSavingKey('');
     }
@@ -166,7 +184,7 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
       <section className="bg-white border border-[#b8424a] p-5 space-y-4">
         <h3 className="text-lg font-bold text-[#6b0b12] pb-2 border-b border-[#e3b8bb] m-0 flex items-center gap-2">
           <Link2 className="w-5 h-5 text-[#8E1018]" />
-          <span>1. Đường link truy cập riêng cho 3 đối tượng</span>
+          <span>1. Đường link truy cập riêng cho 4 cổng chức năng</span>
         </h3>
 
         <div className="space-y-4">
@@ -234,6 +252,32 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
             <strong>cb1@2026</strong> – <strong>cb4@2026</strong> (Chi bộ 1–4),{' '}
             <strong>ubkt@2026</strong> (Thư ký UBKT Đảng uỷ).
           </p>
+          {needsSixUnitSqlUpgrade && (
+            <div className="mt-3 p-3 bg-[#FCF8E8] border border-[#D4A73E] flex flex-wrap items-center justify-between gap-2 text-sm text-[#4b3512]">
+              <span>
+                Bảng <code>branch_access</code> trên Supabase chưa chạy SQL mở khoá cho <strong>Đảng bộ trường</strong> và <strong>UBKT Đảng uỷ</strong>.
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  void handleCopy('six_unit_sql', SUPABASE_SIX_UNIT_UPGRADE_SQL)
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#8E1018] text-white font-bold text-xs hover:bg-[#730B12] whitespace-nowrap"
+              >
+                {copiedId === 'six_unit_sql' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-[#F6CF62]" />
+                    Đã sao chép SQL mở khoá
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-[#F6CF62]" />
+                    Sao chép SQL mở khoá 2 đơn vị
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -343,7 +387,7 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
             Admin có thể xem, tải từng tệp trực tiếp ngay trong phần mềm hoặc vào trang quản trị <strong>Supabase → Storage → {STORAGE_BUCKET}</strong> để sao lưu thư mục theo từng Chi bộ.
           </p>
         </div>
-        <div className="pt-1">
+        <div className="pt-1 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => void handleCopy('supabase_sql', SUPABASE_SETUP_SQL)}
@@ -352,12 +396,32 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
             {copiedId === 'supabase_sql' ? (
               <>
                 <Check className="w-4 h-4" />
-                Đã sao chép mã SQL cấu hình Supabase
+                Đã sao chép mã SQL hồ sơ
               </>
             ) : (
               <>
                 <Copy className="w-4 h-4" />
-                Sao chép lại mã SQL cấu hình Supabase
+                Sao chép mã SQL cấu hình Hồ sơ
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              void handleCopy('supabase_voting_sql', SUPABASE_VOTING_SQL)
+            }
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#8E1018] text-white font-bold text-sm hover:bg-[#730B12]"
+          >
+            {copiedId === 'supabase_voting_sql' ? (
+              <>
+                <Check className="w-4 h-4 text-[#F6CF62]" />
+                Đã sao chép mã SQL Bỏ phiếu
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 text-[#F6CF62]" />
+                Sao chép mã SQL Bỏ phiếu trực tuyến (Mẫu 4 &amp; 5)
               </>
             )}
           </button>
