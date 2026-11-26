@@ -13,10 +13,10 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
-  deleteFileChunksFromFirestore,
-  downloadFileFromFirestore,
-  uploadFileToFirestore,
-} from '../services/firestoreService';
+  deleteFileFromSupabaseStorage,
+  downloadFileFromSupabaseStorage,
+  uploadFileToSupabaseStorage,
+} from '../services/supabaseService';
 import {
   ALLOWED_EXTENSIONS,
   AttachmentMeta,
@@ -194,7 +194,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       if (file.size > MAX_FILE_SIZE_BYTES) {
         onNotify(
           'error',
-          `Tệp "${file.name}" vượt quá dung lượng tối đa 8 MB để đồng bộ trực tuyến.`
+          `Tệp "${file.name}" vượt quá dung lượng tối đa 25 MB để tải lên Supabase Storage.`
         );
         continue;
       }
@@ -212,16 +212,12 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
         const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
         const fileId = `f_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-        await uploadFileToFirestore({
+        const storagePath = await uploadFileToSupabaseStorage({
           file,
           fileId,
-          dossierId: draft.id,
+          dossier: draft,
           docKey,
           extension: ext,
-          uploadedAt: now,
-          uploadedByLabel: actorLabel,
-          branchProof:
-            session.type === 'branch' ? session.branchProof : undefined,
         });
 
         addedMetas.push({
@@ -232,6 +228,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           extension: ext,
           uploadedAt: now,
           uploadedByRole: actorLabel,
+          storagePath,
         });
       }
 
@@ -264,7 +261,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
     } catch {
       onNotify(
         'error',
-        'Không thể tải tệp lên máy chủ trực tuyến. Vui lòng kiểm tra dung lượng (tối đa 8 MB) và thử lại.'
+        'Không thể tải tệp lên Supabase Storage. Vui lòng kiểm tra dung lượng (tối đa 25 MB) và thử lại.'
       );
     } finally {
       setIsSaving(false);
@@ -275,7 +272,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
     setIsSaving(true);
     const now = new Date().toISOString();
     try {
-      await deleteFileChunksFromFirestore(meta.id);
+      await deleteFileFromSupabaseStorage(meta.storagePath);
       const targetDoc = draft.documents.find((d) => d.key === docKey);
       const updatedDossier: Dossier = {
         ...draft,
@@ -309,16 +306,21 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   };
 
   const handleOpenOrDownload = async (
-    fileId: string,
+    att: AttachmentMeta,
+    docKey: string,
     mode: 'preview' | 'download'
   ) => {
-    setLoadingFileId(fileId);
+    setLoadingFileId(att.id);
     try {
-      const record = await downloadFileFromFirestore(fileId);
+      const record = await downloadFileFromSupabaseStorage(
+        att,
+        draft.id,
+        docKey
+      );
       if (!record) {
         onNotify(
           'error',
-          'Không tìm thấy nội dung tệp trên máy chủ dữ liệu.'
+          'Không tìm thấy nội dung tệp trên kho lưu trữ Supabase.'
         );
         return;
       }
@@ -328,7 +330,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
         onDownloadFile(record);
       }
     } catch {
-      onNotify('error', 'Không thể tải nội dung tệp. Vui lòng thử lại.');
+      onNotify('error', 'Không thể tải nội dung tệp từ Supabase. Vui lòng thử lại.');
     } finally {
       setLoadingFileId('');
     }
@@ -978,7 +980,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
             2. Danh mục tài liệu và tệp đính kèm trực tuyến
           </h3>
           <span className="text-sm text-[#5c4748]">
-            Hỗ trợ: PDF, Word (.doc, .docx), Excel (.xls, .xlsx), JPG, PNG (tối đa 8 MB/tệp)
+            Lưu trữ Supabase Storage · Hỗ trợ: PDF, Word (.doc, .docx), Excel (.xls, .xlsx), JPG, PNG (tối đa 25 MB/tệp)
           </span>
         </div>
 
@@ -1075,7 +1077,11 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                                   type="button"
                                   disabled={loadingFileId === att.id}
                                   onClick={() =>
-                                    void handleOpenOrDownload(att.id, 'preview')
+                                    void handleOpenOrDownload(
+                                      att,
+                                      doc.key,
+                                      'preview'
+                                    )
                                   }
                                   className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold border border-[#8E1018] text-[#8E1018] bg-white hover:bg-[#FBF0C9] disabled:opacity-50"
                                 >
@@ -1087,7 +1093,8 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                                   disabled={loadingFileId === att.id}
                                   onClick={() =>
                                     void handleOpenOrDownload(
-                                      att.id,
+                                      att,
+                                      doc.key,
                                       'download'
                                     )
                                   }

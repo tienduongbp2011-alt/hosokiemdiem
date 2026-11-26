@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
 import {
   FileSpreadsheet,
   FolderOpen,
@@ -23,16 +21,18 @@ import { PortalLoginGateway } from './components/PortalLoginGateway';
 import { SummaryExportPage } from './components/SummaryExportPage';
 import { ToastContainer } from './components/ToastContainer';
 import { DEFAULT_YEAR } from './data/seedData';
-import { BOOTSTRAPPED_ADMIN_EMAIL, auth, db, googleProvider } from './firebase';
 import {
-  ensureFirestoreSeededByAdmin,
+  ensureSupabaseSeededByAdmin,
+  fetchAllDossiers,
+  isMissingTableError,
   resetAllDataAsAdmin,
   saveDossierAsAdmin,
   saveDossierAsBranch,
   saveDossierAsMember,
   saveManyDossiersAsAdmin,
-  subscribeDossiers,
-} from './services/firestoreService';
+  subscribeDossiersRealtime,
+} from './services/supabaseService';
+import { supabase } from './supabase';
 import {
   BranchSession,
   Dossier,
@@ -79,6 +79,8 @@ export default function App() {
   const [session, setSession] = useState<PortalSession | null>(null);
   const [dossiers, setDossiers] = useState<Dossier[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [needsSchemaSetup, setNeedsSchemaSetup] = useState(false);
+  const [retryCounter, setRetryCounter] = useState(0);
   const [activeNav, setActiveNav] = useState<NavSection>('overview');
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(
     null
@@ -109,133 +111,189 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // 1. Real-time Firestore listener for all dossiers
+  const refreshDossiersNow = useCallback(async () => {
+    try {
+      const latest = await fetchAllDossiers();
+      setDossiers(latest);
+      setNeedsSchemaSetup(false);
+    } catch (err) {
+      if (isMissingTableError(err)) {
+        setNeedsSchemaSetup(true);
+      }
+    }
+  }, []);
+
+  // 1. Real-time Supabase listener + initial fetch for all dossiers
   useEffect(() => {
-    const unsubscribe = subscribeDossiers(
+    setIsLoadingData(true);
+    const unsubscribe = subscribeDossiersRealtime(
       (items) => {
         setDossiers(items);
+        setNeedsSchemaSetup(false);
         setIsLoadingData(false);
       },
       (err) => {
         setIsLoadingData(false);
-        console.error('Dossiers subscription error:', err);
+        if (isMissingTableError(err)) {
+          setNeedsSchemaSetup(true);
+          return;
+        }
+        console.error('Supabase dossiers sync error:', err);
         pushToast(
           'error',
-          'Không thể đồng bộ dữ liệu trực tuyến từ Firebase. Vui lòng thử tải lại trang.'
+          'Không thể đồng bộ dữ liệu trực tuyến từ Supabase. Vui lòng thử tải lại trang.'
         );
       }
     );
     return () => unsubscribe();
-  }, [pushToast]);
+  }, [pushToast, retryCounter]);
 
-  // Helper to verify if signed-in Firebase user is an Admin
-  const checkIsAuthorizedAdmin = useCallback(
-    async (uid: string, email: string | null, emailVerified: boolean) => {
-      if (!emailVerified) return false;
-      if (
-        email &&
-        email.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL.toLowerCase()
-      ) {
-        return true;
-      }
+  const hydrateAdminSession = useCallback(
+    async (uid: string, email: string, fullNameHint?: string) => {
+      setSession((prev) => {
+        if (prev && prev.type !== 'admin') return prev;
+        return {
+          type: 'admin',
+          uid,
+          email,
+          displayName: fullNameHint || 'Nguyễn Tiến Dương',
+        };
+      });
+
       try {
-        const snap = await getDoc(doc(db, 'admins', uid));
-        return snap.exists();
-      } catch {
-        return false;
-      }
-    },
-    []
-  );
-
-  // 2. Listen to Firebase Auth state for Admin portal persistence
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) return;
-      // Do not auto-hijack if user explicitly opened ?cong=dang-vien or ?cong=chi-bo
-      if (initialPortal === 'member' || initialPortal === 'branch') return;
-
-      const authorized = await checkIsAuthorizedAdmin(
-        user.uid,
-        user.email,
-        user.emailVerified
-      );
-      if (authorized) {
-        setSession((prev) => {
-          if (prev && prev.type !== 'admin') return prev;
-          return {
-            type: 'admin',
-            uid: user.uid,
-            email: user.email ?? '',
-            displayName: user.displayName || 'Nguyễn Tiến Dương',
-          };
-        });
-        try {
-          const seeded = await ensureFirestoreSeededByAdmin();
-          if (seeded.seededDossiersCount > 0) {
-            pushToast(
-              'success',
-              `Đã tự động khởi tạo ${seeded.seededDossiersCount} hồ sơ năm 2026 trên cơ sở dữ liệu trực tuyến.`
-            );
-          }
-        } catch (err) {
-          console.error('Seed check error:', err);
+        const seeded = await ensureSupabaseSeededByAdmin();
+        await refreshDossiersNow();
+        if (seeded.seededDossiersCount > 0 || seeded.seededAccessCount > 0) {
+          pushToast(
+            'success',
+            `Đã tự động khởi tạo ${seeded.seededDossiersCount} hồ sơ năm 2026 và mật khẩu 4 Chi bộ trên Supabase.`
+          );
+        }
+      } catch (err) {
+        if (isMissingTableError(err)) {
+          setNeedsSchemaSetup(true);
+          pushToast(
+            'error',
+            'Bảng dữ liệu chưa tồn tại trên Supabase. Vui lòng chạy tệp supabase_setup.sql trong SQL Editor.'
+          );
+        } else {
+          console.error('Supabase seed error:', err);
         }
       }
-    });
-    return () => unsub();
-  }, [initialPortal, checkIsAuthorizedAdmin, pushToast]);
+    },
+    [pushToast, refreshDossiersNow]
+  );
 
-  const handleSignInAdminGoogle = async () => {
+  // 2. Listen to Supabase Auth state for Admin portal persistence
+  useEffect(() => {
+    let active = true;
+
+    const checkExistingSession = async () => {
+      if (initialPortal === 'member' || initialPortal === 'branch') return;
+      const { data } = await supabase.auth.getSession();
+      const user = data.session?.user;
+      if (active && user) {
+        await hydrateAdminSession(
+          user.id,
+          user.email ?? '',
+          (user.user_metadata?.full_name as string | undefined) || undefined
+        );
+      }
+    };
+
+    void checkExistingSession();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, authSession) => {
+        if (!active) return;
+        if (initialPortal === 'member' || initialPortal === 'branch') return;
+        if (authSession?.user) {
+          void hydrateAdminSession(
+            authSession.user.id,
+            authSession.user.email ?? '',
+            (authSession.user.user_metadata?.full_name as string | undefined) ||
+              undefined
+          );
+        }
+      }
+    );
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [initialPortal, hydrateAdminSession]);
+
+  const handleSignInAdmin = async (email: string, password: string) => {
     setAdminAuthError('');
     setAdminAuthLoading(true);
     try {
-      const cred = await signInWithPopup(auth, googleProvider);
-      const user = cred.user;
-      const authorized = await checkIsAuthorizedAdmin(
-        user.uid,
-        user.email,
-        user.emailVerified
-      );
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-      if (!authorized) {
-        await signOut(auth);
-        setAdminAuthError(
-          `Tài khoản "${user.email ?? ''}" chưa được cấp quyền Admin Đảng uỷ (cần đăng nhập bằng email quản trị ${BOOTSTRAPPED_ADMIN_EMAIL}).`
-        );
+      if (error || !data.user) {
+        const msg = (error?.message ?? '').toLowerCase();
+        if (msg.includes('invalid login credentials')) {
+          setAdminAuthError(
+            'Email hoặc mật khẩu Admin không đúng. Vui lòng kiểm tra lại tài khoản đã tạo trong Supabase Authentication -> Users.'
+          );
+        } else if (msg.includes('email not confirmed')) {
+          setAdminAuthError(
+            'Email Admin chưa được xác nhận. Trong Supabase -> Authentication -> Users, hãy tích "Auto Confirm User" khi tạo tài khoản.'
+          );
+        } else {
+          setAdminAuthError(
+            error?.message || 'Không thể đăng nhập Admin trên Supabase.'
+          );
+        }
         return;
       }
 
       setSession({
         type: 'admin',
-        uid: user.uid,
-        email: user.email ?? '',
-        displayName: user.displayName || 'Nguyễn Tiến Dương',
+        uid: data.user.id,
+        email: data.user.email ?? email,
+        displayName:
+          (data.user.user_metadata?.full_name as string | undefined) ||
+          'Nguyễn Tiến Dương',
       });
       setActiveNav('overview');
       setSelectedDossierId(null);
 
-      const seeded = await ensureFirestoreSeededByAdmin();
-      if (seeded.seededDossiersCount > 0 || seeded.seededAccessCount > 0) {
-        pushToast(
-          'success',
-          `Đăng nhập Admin thành công! Đã khởi tạo ${seeded.seededDossiersCount} hồ sơ năm 2026 và mật khẩu 4 Chi bộ trực tuyến.`
-        );
-      } else {
-        pushToast('success', 'Đăng nhập Cổng Admin Đảng uỷ thành công.');
+      try {
+        const seeded = await ensureSupabaseSeededByAdmin();
+        await refreshDossiersNow();
+        if (seeded.seededDossiersCount > 0 || seeded.seededAccessCount > 0) {
+          pushToast(
+            'success',
+            `Đăng nhập Admin thành công! Đã khởi tạo ${seeded.seededDossiersCount} hồ sơ năm 2026 và mật khẩu 4 Chi bộ trên Supabase.`
+          );
+        } else {
+          pushToast('success', 'Đăng nhập Cổng Admin Đảng uỷ thành công.');
+        }
+      } catch (seedErr) {
+        if (isMissingTableError(seedErr)) {
+          setNeedsSchemaSetup(true);
+          setSession(null);
+          setAdminAuthError(
+            'Tài khoản Admin hợp lệ nhưng chưa chạy mã SQL khởi tạo bảng trên Supabase. Vui lòng bấm "Sao chép mã SQL khởi tạo" ở khung phía trên rồi chạy trong SQL Editor của Supabase.'
+          );
+        } else {
+          pushToast('success', 'Đăng nhập Cổng Admin Đảng uỷ thành công.');
+        }
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('popup-closed-by-user')) {
-        setAdminAuthError('Bạn đã đóng cửa sổ đăng nhập Google.');
-      } else {
-        setAdminAuthError(
-          'Không thể đăng nhập Google. Vui lòng cho phép cửa sổ bật lên (popup) và thử lại.'
-        );
-      }
+    } catch {
+      setAdminAuthError('Không thể kết nối tới Supabase. Vui lòng kiểm tra mạng và thử lại.');
     } finally {
       setAdminAuthLoading(false);
     }
+  };
+
+  const handleRetryConnect = () => {
+    setRetryCounter((c) => c + 1);
+    pushToast('info', 'Đang kiểm tra lại kết nối tới Supabase...');
   };
 
   const handleEnterMember = (memberSession: MemberSession) => {
@@ -257,7 +315,7 @@ export default function App() {
   const handleLogout = async () => {
     if (session?.type === 'admin') {
       try {
-        await signOut(auth);
+        await supabase.auth.signOut();
       } catch {
         // ignore signOut errors
       }
@@ -310,14 +368,16 @@ export default function App() {
       } else {
         await saveDossierAsMember(updated);
       }
+      await refreshDossiersNow();
       if (successMessage) {
         pushToast('success', successMessage);
       }
-    } catch {
-      pushToast(
-        'error',
-        'Không thể lưu thay đổi lên máy chủ trực tuyến (kiểm tra trạng thái khoá hồ sơ hoặc quyền truy cập).'
-      );
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Không thể lưu thay đổi lên Supabase (kiểm tra trạng thái khoá hồ sơ hoặc quyền truy cập).';
+      pushToast('error', msg);
     }
   };
 
@@ -327,9 +387,10 @@ export default function App() {
   ) => {
     try {
       await saveManyDossiersAsAdmin(dossiersToSave);
+      await refreshDossiersNow();
       pushToast('success', summaryText);
     } catch {
-      pushToast('error', 'Không thể lưu danh sách nhập từ Excel lên Firestore.');
+      pushToast('error', 'Không thể lưu danh sách nhập từ Excel lên Supabase.');
     }
   };
 
@@ -353,16 +414,17 @@ export default function App() {
     setIsResetting(true);
     try {
       await resetAllDataAsAdmin();
+      await refreshDossiersNow();
       setSelectedDossierId(null);
       setSelectedYear(DEFAULT_YEAR);
       setActiveNav('overview');
       setShowResetConfirm(false);
       pushToast(
         'success',
-        'Đã khôi phục 46 hồ sơ năm 2026 về trạng thái Chưa nộp trên cơ sở dữ liệu trực tuyến.'
+        'Đã khôi phục 46 hồ sơ năm 2026 về trạng thái Chưa nộp trên Supabase.'
       );
     } catch {
-      pushToast('error', 'Không thể khôi phục dữ liệu trên Firestore.');
+      pushToast('error', 'Không thể khôi phục dữ liệu trên Supabase.');
     } finally {
       setIsResetting(false);
     }
@@ -376,11 +438,14 @@ export default function App() {
           initialPortal={initialPortal}
           dossiers={dossiers}
           isLoadingData={isLoadingData}
+          needsSchemaSetup={needsSchemaSetup}
+          onRetryConnect={handleRetryConnect}
           onEnterMember={handleEnterMember}
           onEnterBranch={handleEnterBranch}
-          onSignInAdminGoogle={handleSignInAdminGoogle}
+          onSignInAdmin={handleSignInAdmin}
           adminAuthLoading={adminAuthLoading}
           adminAuthError={adminAuthError}
+          onNotify={pushToast}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </>
@@ -448,7 +513,7 @@ export default function App() {
         </main>
 
         <footer className="px-4 py-3 border-t border-[#e3c8c9] bg-white text-center text-xs text-[#5c4748]">
-          Đảng bộ Trường THPT Thanh Hoà · Cổng nộp hồ sơ Đảng viên (Đồng bộ trực tuyến đa thiết bị)
+          Đảng bộ Trường THPT Thanh Hoà · Cổng nộp hồ sơ Đảng viên (Lưu trữ đồng bộ trên Supabase)
         </footer>
 
         <FilePreviewModal
@@ -588,11 +653,11 @@ export default function App() {
           {/* Sidebar Footer */}
           <div className="p-4 border-t border-[#F6CF62]/30 bg-[#7A0C14] space-y-2.5 text-xs">
             <div className="font-bold text-[#F6CF62]">
-              Đồng bộ trực tuyến · Năm {DEFAULT_YEAR}
+              Supabase trực tuyến · Năm {DEFAULT_YEAR}
             </div>
             <p className="m-0 text-white/90 leading-relaxed">
               {session.type === 'admin'
-                ? 'Quyền cao nhất cấp Đảng uỷ. Dữ liệu và tệp đính kèm đồng bộ tức thì giữa mọi thiết bị.'
+                ? 'Quyền cao nhất cấp Đảng uỷ. Cơ sở dữ liệu và kho tệp đồng bộ trên Supabase.'
                 : `Phạm vi làm việc giới hạn trong ${session.branch}. Dữ liệu đồng bộ tức thì với Đảng uỷ.`}
             </p>
             {session.type === 'admin' && (
@@ -621,7 +686,7 @@ export default function App() {
               <span className="mx-2" aria-hidden="true">
                 ·
               </span>
-              <span>Lưu trữ trực tuyến tập trung đa thiết bị</span>
+              <span>Lưu trữ tập trung trên Supabase (PostgreSQL &amp; Storage)</span>
             </div>
             {session.type === 'admin' && (
               <button
@@ -638,7 +703,7 @@ export default function App() {
           <main className="flex-1 p-4 lg:p-7 max-w-[1440px] w-full mx-auto">
             {isLoadingData ? (
               <div className="py-16 text-center text-lg font-bold text-[#8E1018]">
-                Đang đồng bộ dữ liệu hồ sơ kiểm điểm năm {DEFAULT_YEAR}...
+                Đang đồng bộ dữ liệu hồ sơ kiểm điểm năm {DEFAULT_YEAR} từ Supabase...
               </div>
             ) : selectedDossier ? (
               <DossierDetailView
@@ -700,7 +765,7 @@ export default function App() {
             <span>
               Đảng bộ Trường THPT Thanh Hoà · Hệ thống Quản lý hồ sơ kiểm điểm cuối năm
             </span>
-            <span>Lưu trữ trực tuyến tập trung · Đồng bộ đa thiết bị</span>
+            <span>Lưu trữ tập trung trên Supabase · Đồng bộ đa thiết bị</span>
           </footer>
         </div>
       </div>
@@ -726,7 +791,7 @@ export default function App() {
             </div>
             <div className="p-5 text-[15px] text-[#2b1416] space-y-2">
               <p className="m-0">
-                Thao tác này sẽ xoá toàn bộ dữ liệu hồ sơ và tệp đính kèm hiện có trên cơ sở dữ liệu trực tuyến để khởi tạo lại đúng 46 hồ sơ ban đầu (6 hồ sơ tập thể: Đảng bộ, Chi bộ 1–4, UBKT Đảng uỷ và 40 hồ sơ cá nhân; tất cả ở trạng thái Chưa nộp).
+                Thao tác này sẽ xoá toàn bộ dữ liệu hồ sơ và tệp đính kèm hiện có trên Supabase để khởi tạo lại đúng 46 hồ sơ ban đầu (6 hồ sơ tập thể: Đảng bộ, Chi bộ 1–4, UBKT Đảng uỷ và 40 hồ sơ cá nhân; tất cả ở trạng thái Chưa nộp).
               </p>
               <p className="m-0 font-bold text-[#8E1018]">
                 Bạn có chắc chắn muốn tiếp tục?

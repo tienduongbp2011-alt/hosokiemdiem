@@ -1,10 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Copy, ExternalLink, KeyRound, Link2, Save } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  Database,
+  ExternalLink,
+  KeyRound,
+  Link2,
+  Save,
+} from 'lucide-react';
 import { DEFAULT_BRANCH_PASSWORDS } from '../data/seedData';
+import { SUPABASE_SETUP_SQL } from '../data/supabaseSetupSql';
 import {
   fetchAllBranchAccess,
   updateBranchAccessPassword,
-} from '../services/firestoreService';
+} from '../services/supabaseService';
+import { STORAGE_BUCKET } from '../supabase';
 import {
   BranchAccessRecord,
   BranchUnitKey,
@@ -53,7 +63,7 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
       id: 'admin',
       title: '3. Đường link Cổng Admin Đảng uỷ (Quyền cao nhất)',
       description:
-        'Dành riêng cho Đảng uỷ viên phụ trách hồ sơ đăng nhập bằng tài khoản Google quản trị.',
+        'Dành riêng cho Đảng uỷ viên phụ trách hồ sơ đăng nhập bằng tài khoản Email & Mật khẩu quản trị trên Supabase.',
       url: `${baseUrl}?cong=admin`,
     },
   ];
@@ -295,6 +305,51 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
             </table>
           </div>
         )}
+      </section>
+
+      {/* Section 3: Supabase Storage & SQL info */}
+      <section className="bg-white border border-[#b8424a] p-5 space-y-3">
+        <h3 className="text-lg font-bold text-[#6b0b12] pb-2 border-b border-[#e3b8bb] m-0 flex items-center gap-2">
+          <Database className="w-5 h-5 text-[#8E1018]" />
+          <span>3. Kho lưu trữ tệp trực tuyến trên Supabase</span>
+        </h3>
+        <div className="text-[14.5px] text-[#3a2526] space-y-1.5">
+          <p className="m-0">
+            Toàn bộ tệp PDF, Word, Excel và ảnh chụp do Đảng viên / Chi bộ tải lên được lưu trực tiếp trong{' '}
+            <strong>Supabase Storage</strong> tại kho (Bucket):{' '}
+            <code className="px-1.5 py-0.5 bg-[#FAF8F3] border border-[#d5969a] text-[#8E1018] font-bold">
+              {STORAGE_BUCKET}
+            </code>
+          </p>
+          <p className="m-0">
+            Cấu trúc thư mục tự động:{' '}
+            <code className="px-1.5 py-0.5 bg-[#FAF8F3] border border-[#d5969a] text-[#6b0b12]">
+              Năm / Đơn vị (dang-bo, cb1..cb4, ubkt) / Mã hồ sơ / Mục tài liệu / Tên tệp
+            </code>
+          </p>
+          <p className="m-0 text-sm text-[#5c4748]">
+            Admin có thể xem, tải từng tệp trực tiếp ngay trong phần mềm hoặc vào trang quản trị <strong>Supabase → Storage → {STORAGE_BUCKET}</strong> để sao lưu thư mục theo từng Chi bộ.
+          </p>
+        </div>
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => void handleCopy('supabase_sql', SUPABASE_SETUP_SQL)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-[#8E1018] text-[#8E1018] font-bold text-sm hover:bg-[#FBF0C9]"
+          >
+            {copiedId === 'supabase_sql' ? (
+              <>
+                <Check className="w-4 h-4" />
+                Đã sao chép mã SQL cấu hình Supabase
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4" />
+                Sao chép lại mã SQL cấu hình Supabase
+              </>
+            )}
+          </button>
+        </div>
       </section>
     </div>
   );

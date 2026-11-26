@@ -96,7 +96,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                 Tệp định dạng .{ext.toUpperCase()} không hiển thị trực tiếp trong trình duyệt
               </p>
               <p className="text-[15px] text-[#4a3435] mb-5">
-                Tệp đã được lưu đồng bộ trên máy chủ dữ liệu trực tuyến. Vui lòng tải xuống để mở bằng Microsoft Word hoặc Excel.
+                Tệp đã được lưu trực tuyến trên Supabase Storage. Vui lòng tải xuống để mở bằng Microsoft Word hoặc Excel.
               </p>
               <button
                 type="button"

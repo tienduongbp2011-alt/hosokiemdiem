@@ -83,6 +83,7 @@ export interface AttachmentMeta {
   extension: string;
   uploadedAt: string;
   uploadedByRole: string;
+  storagePath?: string;
 }
 
 export interface DocumentItem {
@@ -226,7 +227,7 @@ export const ALLOWED_EXTENSIONS = [
   'png',
 ];
 
-export const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024; // 8 MB (chunked in Firestore)
+export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB on Supabase Storage
 
 export function getDossierDisplayName(dossier: Dossier): string {
   const trimmed = dossier.fullName.trim();
