@@ -17,20 +17,23 @@ import {
 import { STORAGE_BUCKET } from '../supabase';
 import {
   BranchAccessRecord,
-  BranchUnitKey,
-  BranchUnitName,
+  UnitKey,
+  UnitName,
   formatDateTimeVN,
+  getUnitSecretaryRoleLabel,
 } from '../types';
 
 interface AdminPortalLinksPageProps {
   onNotify: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
-const BRANCH_KEYS: { key: BranchUnitKey; name: BranchUnitName }[] = [
+const UNIT_ACCESS_LIST: { key: UnitKey; name: UnitName }[] = [
+  { key: 'dang-bo', name: 'Đảng bộ trường' },
   { key: 'cb1', name: 'Chi bộ 1' },
   { key: 'cb2', name: 'Chi bộ 2' },
   { key: 'cb3', name: 'Chi bộ 3' },
   { key: 'cb4', name: 'Chi bộ 4' },
+  { key: 'ubkt', name: 'UBKT Đảng uỷ' },
 ];
 
 export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
@@ -54,9 +57,10 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
     },
     {
       id: 'branch',
-      title: '2. Đường link Cổng Đầu mối Chi bộ (Gửi Bí thư / Thư ký Chi bộ 1–4)',
+      title:
+        '2. Đường link Cổng Đầu mối Chi bộ & Thư ký Đảng bộ, UBKT (6 đơn vị)',
       description:
-        'Đầu mối chi bộ chọn đơn vị và nhập mật khẩu chi bộ để kiểm tra hồ sơ đảng viên, ghi mức chi bộ đề nghị và nộp hồ sơ tập thể.',
+        'Dành cho Thư ký Đảng bộ trường, Bí thư / Thư ký Chi bộ 1–4 và Thư ký UBKT Đảng uỷ đăng nhập nộp hồ sơ tập thể và rà soát hồ sơ chi bộ.',
       url: `${baseUrl}?cong=chi-bo`,
     },
     {
@@ -104,14 +108,14 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
   };
 
   const handleSaveBranchPassword = async (
-    unitKey: BranchUnitKey,
-    unitName: BranchUnitName
+    unitKey: UnitKey,
+    unitName: UnitName
   ) => {
     const pw = (newPasswords[unitKey] ?? '').trim();
     if (pw.length < 4) {
       onNotify(
         'error',
-        'Mật khẩu chi bộ cần có ít nhất 4 ký tự để đảm bảo an toàn.'
+        'Mật khẩu đơn vị cần có ít nhất 4 ký tự để đảm bảo an toàn.'
       );
       return;
     }
@@ -130,15 +134,15 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
         const rest = prev.filter((r) => r.unitKey !== unitKey);
         return [...rest, updated].sort(
           (a, b) =>
-            BRANCH_KEYS.findIndex((k) => k.key === a.unitKey) -
-            BRANCH_KEYS.findIndex((k) => k.key === b.unitKey)
+            UNIT_ACCESS_LIST.findIndex((k) => k.key === a.unitKey) -
+            UNIT_ACCESS_LIST.findIndex((k) => k.key === b.unitKey)
         );
       });
       setNewPasswords((prev) => ({ ...prev, [unitKey]: '' }));
       setNewHints((prev) => ({ ...prev, [unitKey]: '' }));
       onNotify(
         'success',
-        `Đã cập nhật mật khẩu đăng nhập cho Đầu mối ${unitName}.`
+        `Đã cập nhật mật khẩu đăng nhập cho ${getUnitSecretaryRoleLabel(unitName)}.`
       );
     } catch {
       onNotify('error', `Không thể cập nhật mật khẩu cho ${unitName}.`);
@@ -220,25 +224,28 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
         <div className="pb-2 border-b border-[#e3b8bb]">
           <h3 className="text-lg font-bold text-[#6b0b12] m-0 flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-[#8E1018]" />
-            <span>2. Mật khẩu đăng nhập Đầu mối Chi bộ (Bí thư / Thư ký)</span>
+            <span>
+              2. Mật khẩu Đầu mối Chi bộ &amp; Thư ký Đảng bộ, UBKT (6 đơn vị)
+            </span>
           </h3>
           <p className="text-sm text-[#5c4748] mt-1 mb-0">
-            Mật khẩu được mã hoá SHA-256 trên máy chủ. Khi khởi tạo lần đầu, mật khẩu mặc định lần lượt là:{' '}
-            <strong>cb1@2026</strong>, <strong>cb2@2026</strong>,{' '}
-            <strong>cb3@2026</strong>, <strong>cb4@2026</strong>. Bạn có thể đổi mật khẩu mới ngay dưới đây.
+            Mật khẩu được mã hoá SHA-256 trên máy chủ. Mật khẩu mặc định khởi tạo:{' '}
+            <strong>dangbo@2026</strong> (Thư ký Đảng bộ trường),{' '}
+            <strong>cb1@2026</strong> – <strong>cb4@2026</strong> (Chi bộ 1–4),{' '}
+            <strong>ubkt@2026</strong> (Thư ký UBKT Đảng uỷ).
           </p>
         </div>
 
         {loading ? (
           <div className="py-6 text-center text-[#8E1018] font-bold">
-            Đang tải cấu hình mật khẩu chi bộ...
+            Đang tải cấu hình mật khẩu các đơn vị...
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="party-table text-[14px]">
               <thead>
                 <tr>
-                  <th className="w-32">Đơn vị</th>
+                  <th className="w-44">Đơn vị / Vai trò</th>
                   <th className="min-w-[210px]">Ghi chú hiện tại</th>
                   <th className="w-40">Cập nhật lần cuối</th>
                   <th className="min-w-[200px]">Đặt mật khẩu mới</th>
@@ -247,12 +254,17 @@ export const AdminPortalLinksPage: React.FC<AdminPortalLinksPageProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {BRANCH_KEYS.map(({ key, name }) => {
+                {UNIT_ACCESS_LIST.map(({ key, name }) => {
                   const rec = accessRecords.find((r) => r.unitKey === key);
                   const fallbackHint = DEFAULT_BRANCH_PASSWORDS[key].hintLabel;
                   return (
                     <tr key={key}>
-                      <td className="font-bold text-[#6b0b12]">{name}</td>
+                      <td>
+                        <div className="font-bold text-[#6b0b12]">{name}</div>
+                        <div className="text-xs text-[#665052]">
+                          {getUnitSecretaryRoleLabel(name)}
+                        </div>
+                      </td>
                       <td>{rec?.hintLabel || fallbackHint}</td>
                       <td className="tabular-nums text-xs text-[#594446]">
                         {rec ? formatDateTimeVN(rec.updatedAt) : '—'}

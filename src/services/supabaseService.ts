@@ -7,8 +7,6 @@ import {
   ALLOWED_EXTENSIONS,
   AttachmentMeta,
   BranchAccessRecord,
-  BranchUnitKey,
-  BranchUnitName,
   DocumentItem,
   Dossier,
   DossierStatus,
@@ -43,8 +41,8 @@ interface DossierDbRow {
 }
 
 interface BranchAccessDbRow {
-  unit_key: BranchUnitKey;
-  unit_name: BranchUnitName;
+  unit_key: UnitKey;
+  unit_name: UnitName;
   password_hash: string;
   hint_label: string;
   updated_at: string;
@@ -241,16 +239,16 @@ export async function ensureSupabaseSeededByAdmin(): Promise<{
     ((existingAccess ?? []) as { unit_key: string }[]).map((r) => r.unit_key)
   );
 
-  const branchKeys: BranchUnitKey[] = ['cb1', 'cb2', 'cb3', 'cb4'];
+  const unitKeys: UnitKey[] = ['dang-bo', 'cb1', 'cb2', 'cb3', 'cb4', 'ubkt'];
   const missingAccessRows: BranchAccessDbRow[] = [];
 
-  for (const unitKey of branchKeys) {
+  for (const unitKey of unitKeys) {
     if (!existingUnitKeys.has(unitKey)) {
       const def = DEFAULT_BRANCH_PASSWORDS[unitKey];
       const hash = await sha256Hex(def.password);
       missingAccessRows.push({
         unit_key: unitKey,
-        unit_name: UNIT_NAME_BY_KEY[unitKey] as BranchUnitName,
+        unit_name: UNIT_NAME_BY_KEY[unitKey],
         password_hash: hash,
         hint_label: def.hintLabel,
         updated_at: new Date().toISOString(),
@@ -273,7 +271,7 @@ export async function ensureSupabaseSeededByAdmin(): Promise<{
 }
 
 export async function verifyBranchPassword(
-  unitKey: BranchUnitKey,
+  unitKey: UnitKey,
   passwordPlain: string
 ): Promise<{ ok: boolean; hash: string; notInitialized?: boolean }> {
   const hash = await sha256Hex(passwordPlain.trim());
@@ -314,8 +312,8 @@ export async function fetchAllBranchAccess(): Promise<BranchAccessRecord[]> {
 }
 
 export async function updateBranchAccessPassword(
-  unitKey: BranchUnitKey,
-  unitName: BranchUnitName,
+  unitKey: UnitKey,
+  unitName: UnitName,
   newPlainPassword: string,
   hintLabel: string
 ): Promise<BranchAccessRecord> {

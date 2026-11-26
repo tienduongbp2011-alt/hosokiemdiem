@@ -3,7 +3,6 @@ import { Download, FileSpreadsheet } from 'lucide-react';
 import { exportSummaryToExcel } from '../services/excelService';
 import {
   ALL_UNITS,
-  BranchUnitName,
   Dossier,
   DossierStatus,
   DossierType,
@@ -21,7 +20,7 @@ interface SummaryExportPageProps {
   availableYears: number[];
   selectedYear: number | 'all';
   onChangeYear: (year: number | 'all') => void;
-  scopedBranch: BranchUnitName | null;
+  scopedBranch: UnitName | null;
   onOpenDossier: (dossierId: string) => void;
   onNotify: (type: 'success' | 'error' | 'info', message: string) => void;
 }

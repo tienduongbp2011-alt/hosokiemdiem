@@ -19,6 +19,7 @@ import { SUPABASE_SETUP_SQL } from '../data/supabaseSetupSql';
 import { verifyBranchPassword } from '../services/supabaseService';
 import { isSupabaseConfigured } from '../supabase';
 import {
+  ALL_UNITS,
   BRANCH_LIST,
   BranchSession,
   BranchUnitKey,
@@ -27,6 +28,8 @@ import {
   MemberSession,
   PortalMode,
   UNIT_KEY_MAP,
+  UnitName,
+  getUnitSecretaryRoleLabel,
 } from '../types';
 import { HammerSickleIcon } from './HammerSickleIcon';
 
@@ -77,8 +80,8 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
   const [memberSearch, setMemberSearch] = useState('');
   const [selectedMemberId, setSelectedMemberId] = useState('');
 
-  // Branch Focal Point state
-  const [focalBranch, setFocalBranch] = useState<BranchUnitName>('Chi bộ 1');
+  // Branch / Unit Secretary Focal Point state (includes Đảng bộ trường, Chi bộ 1-4, UBKT Đảng uỷ)
+  const [focalBranch, setFocalBranch] = useState<UnitName>('Chi bộ 1');
   const [branchPassword, setBranchPassword] = useState('');
   const [showBranchPassword, setShowBranchPassword] = useState(false);
   const [branchError, setBranchError] = useState('');
@@ -128,7 +131,7 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
       return;
     }
 
-    const unitKey = UNIT_KEY_MAP[focalBranch] as BranchUnitKey;
+    const unitKey = UNIT_KEY_MAP[focalBranch];
     setBranchChecking(true);
     try {
       const res = await verifyBranchPassword(unitKey, branchPassword);
@@ -248,7 +251,7 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                   }`}
                 >
                   <Building2 className="w-4 h-4 shrink-0" />
-                  <span>2. Đầu mối Chi bộ</span>
+                  <span>2. Đầu mối / Thư ký</span>
                 </button>
 
                 <button
@@ -278,7 +281,7 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                     {isDedicatedAdmin
                       ? 'ĐĂNG NHẬP CỔNG ADMIN ĐẢNG UỶ'
                       : isDedicatedBranch
-                        ? 'ĐĂNG NHẬP CỔNG ĐẦU MỐI CHI BỘ'
+                        ? 'ĐĂNG NHẬP ĐẦU MỐI CHI BỘ & THƯ KÝ ĐƠN VỊ'
                         : 'CỔNG NỘP HỒ SƠ ĐẢNG VIÊN'}
                   </span>
                 </div>
@@ -422,15 +425,17 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                 </form>
               )}
 
-              {/* PORTAL 2: ĐẦU MỐI CHI BỘ */}
+              {/* PORTAL 2: ĐẦU MỐI CHI BỘ / THƯ KÝ ĐẢNG BỘ & UBKT */}
               {activeTab === 'branch' && (
                 <form onSubmit={handleBranchSubmit} className="space-y-5">
                   <div className="border-b border-[#e3c8c9] pb-3">
                     <h2 className="text-xl font-bold text-[#8E1018] m-0">
-                      Cổng đăng nhập Đầu mối Chi bộ (Bí thư / Thư ký chi bộ)
+                      Cổng Đầu mối Chi bộ &amp; Thư ký Đảng bộ, UBKT
                     </h2>
                     <p className="text-[15px] text-[#594446] mt-1 mb-0">
-                      Dành cho Bí thư hoặc Thư ký chi bộ kiểm tra hồ sơ đảng viên, ghi mức chi bộ đề nghị và nộp hồ sơ tập thể lên Đảng uỷ.
+                      Dành cho <strong>Thư ký Đảng bộ trường</strong>,{' '}
+                      <strong>Bí thư / Thư ký Chi bộ 1–4</strong> và{' '}
+                      <strong>Thư ký UBKT Đảng uỷ</strong> nộp hồ sơ tập thể, kiểm tra hồ sơ đảng viên và chuyển lên Đảng uỷ.
                     </p>
                   </div>
 
@@ -439,20 +444,20 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                       htmlFor="branch-login-unit"
                       className="block text-[15px] font-bold text-[#6b0b12] mb-1.5"
                     >
-                      Chọn Chi bộ phụ trách
+                      Chọn đơn vị / Tài khoản đầu mối
                     </label>
                     <select
                       id="branch-login-unit"
                       value={focalBranch}
                       onChange={(e) => {
-                        setFocalBranch(e.target.value as BranchUnitName);
+                        setFocalBranch(e.target.value as UnitName);
                         setBranchError('');
                       }}
                       className="w-full px-3 py-2.5 border border-[#8E1018] bg-white text-[15px] font-bold"
                     >
-                      {BRANCH_LIST.map((b) => (
-                        <option key={b} value={b}>
-                          {b}
+                      {ALL_UNITS.map((unit) => (
+                        <option key={unit} value={unit}>
+                          {unit} ({getUnitSecretaryRoleLabel(unit)})
                         </option>
                       ))}
                     </select>
@@ -463,7 +468,7 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                       htmlFor="branch-login-password"
                       className="block text-[15px] font-bold text-[#6b0b12] mb-1.5"
                     >
-                      Mật khẩu truy cập Chi bộ
+                      Mật khẩu truy cập đơn vị
                     </label>
                     <div className="relative">
                       <KeyRound className="w-4 h-4 text-[#8E1018] absolute left-3 top-3 pointer-events-none" />
@@ -510,7 +515,7 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                     <LogIn className="w-5 h-5 text-[#F6CF62]" />
                     {branchChecking
                       ? 'Đang xác thực...'
-                      : `Đăng nhập Đầu mối ${focalBranch}`}
+                      : `Đăng nhập ${getUnitSecretaryRoleLabel(focalBranch)}`}
                   </button>
                 </form>
               )}

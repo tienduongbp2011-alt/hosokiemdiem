@@ -43,6 +43,8 @@ import {
   StoredFileRecord,
   ToastMessage,
   getDossierDisplayName,
+  getUnitSecretaryRoleLabel,
+  isCollectiveOnlyUnit,
 } from './types';
 
 interface NavItemConfig {
@@ -332,11 +334,22 @@ export default function App() {
 
   const handleEnterBranch = (branchSession: BranchSession) => {
     setSession(branchSession);
-    setActiveNav('overview');
-    setSelectedDossierId(null);
+    if (isCollectiveOnlyUnit(branchSession.branch)) {
+      const ownCollective = dossiers.find(
+        (d) =>
+          d.type === 'collective' &&
+          d.unitKey === branchSession.unitKey &&
+          d.year === DEFAULT_YEAR
+      );
+      setActiveNav('collective');
+      setSelectedDossierId(ownCollective ? ownCollective.id : null);
+    } else {
+      setActiveNav('overview');
+      setSelectedDossierId(null);
+    }
     pushToast(
       'success',
-      `Đăng nhập thành công Cổng Đầu mối ${branchSession.branch}.`
+      `Đăng nhập thành công tài khoản ${getUnitSecretaryRoleLabel(branchSession.branch)}.`
     );
   };
 
@@ -554,10 +567,14 @@ export default function App() {
     );
   }
 
-  // RENDER PORTAL 2 (BRANCH FOCAL POINT) & PORTAL 3 (ADMIN ĐẢNG UỶ)
+  // RENDER PORTAL 2 (BRANCH / UNIT SECRETARY) & PORTAL 3 (ADMIN ĐẢNG UỶ)
   const scopedBranch = session.type === 'branch' ? session.branch : null;
+  const hideIndividualNav =
+    session.type === 'branch' && isCollectiveOnlyUnit(session.branch);
   const visibleNavItems = NAV_ITEMS.filter(
-    (item) => !item.adminOnly || session.type === 'admin'
+    (item) =>
+      (!item.adminOnly || session.type === 'admin') &&
+      (!hideIndividualNav || item.id !== 'individual')
   );
 
   return (
@@ -601,12 +618,12 @@ export default function App() {
               <div className="text-sm sm:text-base font-bold text-[#F6CF62] leading-tight whitespace-nowrap">
                 {session.type === 'admin'
                   ? 'Nguyễn Tiến Dương'
-                  : `Đầu mối ${session.branch}`}
+                  : session.branch}
               </div>
               <div className="text-xs sm:text-[13px] text-white/95 leading-tight whitespace-nowrap">
                 {session.type === 'admin'
                   ? 'Đảng uỷ viên phụ trách hồ sơ (Admin)'
-                  : 'Bí thư / Thư ký chi bộ'}
+                  : getUnitSecretaryRoleLabel(session.branch)}
               </div>
             </div>
 
@@ -642,7 +659,7 @@ export default function App() {
               <div className="text-xs font-bold tracking-wider text-[#F6CF62]">
                 {session.type === 'admin'
                   ? 'QUẢN TRỊ ĐẢNG UỶ'
-                  : `ĐẦU MỐI ${session.branch.toUpperCase()}`}
+                  : getUnitSecretaryRoleLabel(session.branch).toUpperCase()}
               </div>
               <button
                 type="button"
@@ -709,7 +726,7 @@ export default function App() {
               <strong>
                 {session.type === 'admin'
                   ? 'Cổng Admin Đảng uỷ (Quyền cao nhất)'
-                  : `Cổng Đầu mối ${session.branch}`}
+                  : `Cổng ${getUnitSecretaryRoleLabel(session.branch)}`}
               </strong>
               <span className="mx-2" aria-hidden="true">
                 ·

@@ -35,6 +35,7 @@ import {
   formatDateVN,
   formatFileSize,
   getDossierDisplayName,
+  getUnitSecretaryRoleLabel,
   getVisibleDocuments,
 } from '../types';
 import { StatusText } from './StatusText';
@@ -78,7 +79,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
 
   const actorLabel = useMemo(() => {
     if (session.type === 'admin') return 'Admin Đảng uỷ (Nguyễn Tiến Dương)';
-    if (session.type === 'branch') return `Đầu mối ${session.branch}`;
+    if (session.type === 'branch') return getUnitSecretaryRoleLabel(session.branch);
     return `Đảng viên (${getDossierDisplayName(draft)})`;
   }, [session, draft]);
 
@@ -445,11 +446,11 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           timestamp: now,
           role: actorLabel,
           action: isResubmission
-            ? 'Chi bộ nộp lại hồ sơ lên Đảng uỷ'
-            : 'Chi bộ xác nhận & nộp lên Đảng uỷ',
+            ? `${getUnitSecretaryRoleLabel(draft.branch)} nộp lại hồ sơ lên Đảng uỷ`
+            : `${getUnitSecretaryRoleLabel(draft.branch)} xác nhận & nộp lên Đảng uỷ`,
           fromStatus: previousStatus,
           toStatus: 'Đang rà soát',
-          note: `Đầu mối ${draft.branch} đã kiểm tra và chuyển hồ sơ lên Đảng uỷ rà soát.`,
+          note: `${getUnitSecretaryRoleLabel(draft.branch)} đã kiểm tra và chuyển hồ sơ lên Đảng uỷ rà soát.`,
         },
       ],
     };

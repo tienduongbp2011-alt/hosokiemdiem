@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { FolderOpen, Search } from 'lucide-react';
 import {
   ALL_UNITS,
-  BranchUnitName,
   Dossier,
   DossierStatus,
   STATUS_LIST,
@@ -17,7 +16,7 @@ interface CollectiveListPageProps {
   availableYears: number[];
   selectedYear: number | 'all';
   onChangeYear: (year: number | 'all') => void;
-  scopedBranch: BranchUnitName | null;
+  scopedBranch: UnitName | null;
   onOpenDossier: (dossierId: string) => void;
 }
 

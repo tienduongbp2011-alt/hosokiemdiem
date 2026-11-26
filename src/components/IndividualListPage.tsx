@@ -8,6 +8,7 @@ import {
   DossierStatus,
   POSITION_GROUPS,
   STATUS_LIST,
+  UnitName,
   countDossierAttachments,
   getDossierDisplayName,
   getIndividualChecklistSummary,
@@ -20,7 +21,7 @@ interface IndividualListPageProps {
   availableYears: number[];
   selectedYear: number | 'all';
   onChangeYear: (year: number | 'all') => void;
-  scopedBranch: BranchUnitName | null;
+  scopedBranch: UnitName | null;
   canImportExcel: boolean;
   onOpenDossier: (dossierId: string) => void;
   onCommitExcelImport: (
@@ -49,7 +50,7 @@ export const IndividualListPage: React.FC<IndividualListPageProps> = ({
   const [statusFilter, setStatusFilter] = useState<DossierStatus | 'all'>('all');
   const [isImportOpen, setIsImportOpen] = useState(false);
 
-  const effectiveBranchFilter: BranchUnitName | 'all' =
+  const effectiveBranchFilter: UnitName | 'all' =
     scopedBranch ?? branchFilter;
 
   const filteredIndividuals = useMemo(() => {

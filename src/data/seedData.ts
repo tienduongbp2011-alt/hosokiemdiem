@@ -1,38 +1,48 @@
 import {
-  BranchUnitKey,
   BranchUnitName,
   DocumentItem,
   Dossier,
   PositionGroup,
   UNIT_KEY_MAP,
+  UnitKey,
   UnitName,
 } from '../types';
 
 export const DEFAULT_YEAR = 2026;
 
 export const DEFAULT_BRANCH_PASSWORDS: Record<
-  BranchUnitKey,
-  { unitName: BranchUnitName; password: string; hintLabel: string }
+  UnitKey,
+  { unitName: UnitName; password: string; hintLabel: string }
 > = {
+  'dang-bo': {
+    unitName: 'Đảng bộ trường',
+    password: 'dangbo@2026',
+    hintLabel: 'Thư ký Đảng bộ trường – Mặc định (dangbo@2026)',
+  },
   cb1: {
     unitName: 'Chi bộ 1',
     password: 'cb1@2026',
-    hintLabel: 'Mật khẩu mặc định khởi tạo (cb1@2026)',
+    hintLabel: 'Bí thư / Thư ký Chi bộ 1 – Mặc định (cb1@2026)',
   },
   cb2: {
     unitName: 'Chi bộ 2',
     password: 'cb2@2026',
-    hintLabel: 'Mật khẩu mặc định khởi tạo (cb2@2026)',
+    hintLabel: 'Bí thư / Thư ký Chi bộ 2 – Mặc định (cb2@2026)',
   },
   cb3: {
     unitName: 'Chi bộ 3',
     password: 'cb3@2026',
-    hintLabel: 'Mật khẩu mặc định khởi tạo (cb3@2026)',
+    hintLabel: 'Bí thư / Thư ký Chi bộ 3 – Mặc định (cb3@2026)',
   },
   cb4: {
     unitName: 'Chi bộ 4',
     password: 'cb4@2026',
-    hintLabel: 'Mật khẩu mặc định khởi tạo (cb4@2026)',
+    hintLabel: 'Bí thư / Thư ký Chi bộ 4 – Mặc định (cb4@2026)',
+  },
+  ubkt: {
+    unitName: 'UBKT Đảng uỷ',
+    password: 'ubkt@2026',
+    hintLabel: 'Thư ký UBKT Đảng uỷ – Mặc định (ubkt@2026)',
   },
 };
 

@@ -53,8 +53,8 @@ export interface MemberSession {
 
 export interface BranchSession {
   type: 'branch';
-  branch: BranchUnitName;
-  unitKey: BranchUnitKey;
+  branch: UnitName;
+  unitKey: UnitKey;
   branchProof: string;
 }
 
@@ -68,8 +68,8 @@ export interface AdminSession {
 export type PortalSession = MemberSession | BranchSession | AdminSession;
 
 export interface BranchAccessRecord {
-  unitKey: BranchUnitKey;
-  unitName: BranchUnitName;
+  unitKey: UnitKey;
+  unitName: UnitName;
   passwordHash: string;
   hintLabel?: string;
   updatedAt: string;
@@ -189,6 +189,16 @@ export const UNIT_NAME_BY_KEY: Record<UnitKey, UnitName> = {
   cb4: 'Chi bộ 4',
   ubkt: 'UBKT Đảng uỷ',
 };
+
+export function isCollectiveOnlyUnit(unit: UnitName): boolean {
+  return unit === 'Đảng bộ trường' || unit === 'UBKT Đảng uỷ';
+}
+
+export function getUnitSecretaryRoleLabel(unit: UnitName): string {
+  if (unit === 'Đảng bộ trường') return 'Thư ký Đảng bộ trường';
+  if (unit === 'UBKT Đảng uỷ') return 'Thư ký UBKT Đảng uỷ';
+  return `Bí thư / Thư ký ${unit}`;
+}
 
 export const STATUS_LIST: DossierStatus[] = [
   'Chưa nộp',

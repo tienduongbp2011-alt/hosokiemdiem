@@ -25,7 +25,7 @@ interface OverviewPageProps {
   availableYears: number[];
   selectedYear: number | 'all';
   onChangeYear: (year: number | 'all') => void;
-  scopedBranch: BranchUnitName | null;
+  scopedBranch: UnitName | null;
   onNavigate: (section: NavSection) => void;
   onOpenDossier: (dossierId: string) => void;
 }

@@ -36,14 +36,19 @@ CREATE TABLE IF NOT EXISTS public.dossiers (
 CREATE INDEX IF NOT EXISTS idx_dossiers_year_unit ON public.dossiers (year, unit_key);
 CREATE INDEX IF NOT EXISTS idx_dossiers_type_status ON public.dossiers (type, status);
 
--- 2. Bảng lưu mật khẩu băm SHA-256 của 4 Đầu mối Chi bộ (ẩn hoàn toàn với người dùng thường)
+-- 2. Bảng lưu mật khẩu băm SHA-256 của 6 Đầu mối / Thư ký (Đảng bộ trường, Chi bộ 1–4, UBKT Đảng uỷ)
 CREATE TABLE IF NOT EXISTS public.branch_access (
-  unit_key TEXT PRIMARY KEY CHECK (unit_key IN ('cb1', 'cb2', 'cb3', 'cb4')),
+  unit_key TEXT PRIMARY KEY CHECK (unit_key IN ('dang-bo', 'cb1', 'cb2', 'cb3', 'cb4', 'ubkt')),
   unit_name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   hint_label TEXT NOT NULL DEFAULT '',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Nâng cấp ràng buộc cho bảng đã tạo từ trước (an toàn khi chạy lại nhiều lần)
+ALTER TABLE public.branch_access DROP CONSTRAINT IF EXISTS branch_access_unit_key_check;
+ALTER TABLE public.branch_access ADD CONSTRAINT branch_access_unit_key_check
+  CHECK (unit_key IN ('dang-bo', 'cb1', 'cb2', 'cb3', 'cb4', 'ubkt'));
 
 -- 3. Bật bảo mật mức dòng (Row Level Security)
 ALTER TABLE public.dossiers ENABLE ROW LEVEL SECURITY;
@@ -105,7 +110,7 @@ AS $$
 DECLARE
   v_stored_hash TEXT;
 BEGIN
-  IF p_unit_key NOT IN ('cb1', 'cb2', 'cb3', 'cb4') THEN
+  IF p_unit_key NOT IN ('dang-bo', 'cb1', 'cb2', 'cb3', 'cb4', 'ubkt') THEN
     RETURN jsonb_build_object('ok', false, 'not_initialized', false);
   END IF;
 
@@ -227,8 +232,8 @@ BEGIN
     RAISE EXCEPTION 'Không tìm thấy hồ sơ.';
   END IF;
 
-  IF v_row.unit_key NOT IN ('cb1', 'cb2', 'cb3', 'cb4') THEN
-    RAISE EXCEPTION 'Đầu mối Chi bộ không có quyền sửa hồ sơ của Đảng bộ hoặc UBKT.';
+  IF v_row.unit_key NOT IN ('dang-bo', 'cb1', 'cb2', 'cb3', 'cb4', 'ubkt') THEN
+    RAISE EXCEPTION 'Đơn vị không hợp lệ.';
   END IF;
 
   IF v_row.status = 'Đã hoàn tất' THEN
