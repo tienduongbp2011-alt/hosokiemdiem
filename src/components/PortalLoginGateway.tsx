@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   Building2,
   Check,
   Copy,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 import { SUPABASE_SETUP_SQL } from '../data/supabaseSetupSql';
 import { verifyBranchPassword } from '../services/supabaseService';
+import { isSupabaseConfigured } from '../supabase';
 import {
   BRANCH_LIST,
   BranchSession,
@@ -55,16 +57,20 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
   adminAuthError,
   onNotify,
 }) => {
-  const defaultTab: 'member' | 'branch' | 'admin' =
-    initialPortal === 'branch'
-      ? 'branch'
-      : initialPortal === 'admin'
-        ? 'admin'
-        : 'member';
+  const resolveTab = (mode: PortalMode): 'member' | 'branch' | 'admin' =>
+    mode === 'branch' ? 'branch' : mode === 'admin' ? 'admin' : 'member';
 
   const [activeTab, setActiveTab] = useState<'member' | 'branch' | 'admin'>(
-    defaultTab
+    () => resolveTab(initialPortal)
   );
+  const [showAllTabs, setShowAllTabs] = useState<boolean>(
+    initialPortal === 'gateway'
+  );
+
+  useEffect(() => {
+    setActiveTab(resolveTab(initialPortal));
+    setShowAllTabs(initialPortal === 'gateway');
+  }, [initialPortal]);
 
   // Member Portal state
   const [memberBranch, setMemberBranch] = useState<BranchUnitName>('Chi bộ 1');
@@ -111,6 +117,12 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
   const handleBranchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBranchError('');
+    if (!isSupabaseConfigured) {
+      setBranchError(
+        'Chưa cấu hình biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel.'
+      );
+      return;
+    }
     if (!branchPassword.trim()) {
       setBranchError('Vui lòng nhập mật khẩu Đầu mối Chi bộ.');
       return;
@@ -125,7 +137,9 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
           'Hệ thống Supabase chưa được khởi tạo dữ liệu. Vui lòng chạy mã SQL khởi tạo và đăng nhập Cổng 3 (Admin Đảng uỷ) lần đầu.'
         );
       } else if (!res.ok) {
-        setBranchError('Mật khẩu chưa chính xác. Vui lòng kiểm tra lại với Đảng uỷ.');
+        setBranchError(
+          'Mật khẩu chưa chính xác. Vui lòng kiểm tra lại với Đảng uỷ.'
+        );
       } else {
         onEnterBranch({
           type: 'branch',
@@ -135,7 +149,9 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
         });
       }
     } catch {
-      setBranchError('Không thể xác thực mật khẩu trên Supabase. Vui lòng thử lại.');
+      setBranchError(
+        'Không thể xác thực mật khẩu trên Supabase. Vui lòng thử lại.'
+      );
     } finally {
       setBranchChecking(false);
     }
@@ -170,8 +186,10 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
     window.history.replaceState({}, '', url.toString());
   };
 
-  const isSinglePortalLink = initialPortal !== 'gateway';
   const hasSeededData = dossiers.length > 0;
+  const isDedicatedAdmin = !showAllTabs && activeTab === 'admin';
+  const isDedicatedBranch = !showAllTabs && activeTab === 'branch';
+  const isDedicatedMember = !showAllTabs && activeTab === 'member';
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF8F3] text-[#261617]">
@@ -203,99 +221,94 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
       {/* Center Login Container */}
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
         <div className="w-full max-w-2xl space-y-4">
-          {/* One-time Supabase SQL Setup Banner when tables do not exist yet */}
-          {needsSchemaSetup && (
-            <div className="bg-[#FCF8E8] border-2 border-[#8E1018] p-5 shadow-sm space-y-3">
-              <div className="flex items-center gap-2 text-[#8E1018] font-bold text-lg">
-                <Database className="w-5 h-5 shrink-0" />
-                <span>Hoàn tất khởi tạo bảng dữ liệu trên Supabase (chỉ làm 1 lần)</span>
-              </div>
-              <p className="text-[15px] text-[#3d2817] m-0 leading-relaxed">
-                Ứng dụng đã kết nối tới dự án Supabase của bạn, nhưng bảng <strong>dossiers</strong>, <strong>branch_access</strong> và kho tệp <strong>ho-so-kiem-diem</strong> chưa được tạo. Thực hiện nhanh 3 bước:
-              </p>
-              <ol className="text-[14px] text-[#3d2817] m-0 pl-5 space-y-1">
-                <li>Bấm nút <strong>Sao chép mã SQL khởi tạo</strong> ngay dưới đây.</li>
-                <li>
-                  Mở trang quản trị <strong>Supabase → SQL Editor → New query</strong>, dán vào rồi bấm <strong>Run</strong>.
-                </li>
-                <li>
-                  Tạo tài khoản Admin trong <strong>Authentication → Users → Add user</strong> (tích <em>Auto Confirm User</em>), sau đó quay lại bấm <strong>Kiểm tra lại kết nối</strong> và đăng nhập ở tab <strong>3. Admin Đảng uỷ</strong>.
-                </li>
-              </ol>
-              <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                <button
-                  type="button"
-                  onClick={() => void handleCopySql()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#8E1018] text-white font-bold text-sm hover:bg-[#730B12]"
-                >
-                  {copiedSql ? (
-                    <>
-                      <Check className="w-4 h-4 text-[#F6CF62]" />
-                      Đã sao chép mã SQL
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4 text-[#F6CF62]" />
-                      Sao chép mã SQL khởi tạo
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={onRetryConnect}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-[#8E1018] text-[#8E1018] font-bold text-sm hover:bg-[#FBF0C9]"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Đã chạy SQL – Kiểm tra lại kết nối
-                </button>
-              </div>
-            </div>
-          )}
-
           <div className="bg-white border-2 border-[#8E1018] shadow-md">
-            {/* 3-Portal Switcher Tabs */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 border-b-2 border-[#8E1018] bg-[#FDF6DE]">
-              <button
-                type="button"
-                onClick={() => switchPortalUrl('member')}
-                className={`px-4 py-3.5 font-bold text-[15px] flex items-center justify-center gap-2 transition-colors border-b sm:border-b-0 sm:border-r border-[#d5969a] ${
-                  activeTab === 'member'
-                    ? 'bg-[#8E1018] text-[#F6CF62]'
-                    : 'text-[#6b0b12] hover:bg-[#FBF0C9]'
-                }`}
-              >
-                <UserCheck className="w-4 h-4 shrink-0" />
-                <span>1. Cổng Đảng viên</span>
-              </button>
+            {/* Dedicated Portal Header Bar OR 3-Portal Switcher Tabs */}
+            {showAllTabs ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 border-b-2 border-[#8E1018] bg-[#FDF6DE]">
+                <button
+                  type="button"
+                  onClick={() => switchPortalUrl('member')}
+                  className={`px-4 py-3.5 font-bold text-[15px] flex items-center justify-center gap-2 transition-colors border-b sm:border-b-0 sm:border-r border-[#d5969a] ${
+                    activeTab === 'member'
+                      ? 'bg-[#8E1018] text-[#F6CF62]'
+                      : 'text-[#6b0b12] hover:bg-[#FBF0C9]'
+                  }`}
+                >
+                  <UserCheck className="w-4 h-4 shrink-0" />
+                  <span>1. Cổng Đảng viên</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => switchPortalUrl('branch')}
-                className={`px-4 py-3.5 font-bold text-[15px] flex items-center justify-center gap-2 transition-colors border-b sm:border-b-0 sm:border-r border-[#d5969a] ${
-                  activeTab === 'branch'
-                    ? 'bg-[#8E1018] text-[#F6CF62]'
-                    : 'text-[#6b0b12] hover:bg-[#FBF0C9]'
-                }`}
-              >
-                <Building2 className="w-4 h-4 shrink-0" />
-                <span>2. Đầu mối Chi bộ</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => switchPortalUrl('branch')}
+                  className={`px-4 py-3.5 font-bold text-[15px] flex items-center justify-center gap-2 transition-colors border-b sm:border-b-0 sm:border-r border-[#d5969a] ${
+                    activeTab === 'branch'
+                      ? 'bg-[#8E1018] text-[#F6CF62]'
+                      : 'text-[#6b0b12] hover:bg-[#FBF0C9]'
+                  }`}
+                >
+                  <Building2 className="w-4 h-4 shrink-0" />
+                  <span>2. Đầu mối Chi bộ</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => switchPortalUrl('admin')}
-                className={`px-4 py-3.5 font-bold text-[15px] flex items-center justify-center gap-2 transition-colors ${
-                  activeTab === 'admin'
-                    ? 'bg-[#8E1018] text-[#F6CF62]'
-                    : 'text-[#6b0b12] hover:bg-[#FBF0C9]'
-                }`}
-              >
-                <Shield className="w-4 h-4 shrink-0" />
-                <span>3. Admin Đảng uỷ</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => switchPortalUrl('admin')}
+                  className={`px-4 py-3.5 font-bold text-[15px] flex items-center justify-center gap-2 transition-colors ${
+                    activeTab === 'admin'
+                      ? 'bg-[#8E1018] text-[#F6CF62]'
+                      : 'text-[#6b0b12] hover:bg-[#FBF0C9]'
+                  }`}
+                >
+                  <Shield className="w-4 h-4 shrink-0" />
+                  <span>3. Admin Đảng uỷ</span>
+                </button>
+              </div>
+            ) : (
+              <div className="bg-[#8E1018] text-[#F6CF62] px-6 py-3.5 border-b-2 border-[#F6CF62] flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 font-bold text-base sm:text-lg">
+                  {isDedicatedAdmin && <Shield className="w-5 h-5 shrink-0" />}
+                  {isDedicatedBranch && (
+                    <Building2 className="w-5 h-5 shrink-0" />
+                  )}
+                  {isDedicatedMember && (
+                    <UserCheck className="w-5 h-5 shrink-0" />
+                  )}
+                  <span>
+                    {isDedicatedAdmin
+                      ? 'ĐĂNG NHẬP CỔNG ADMIN ĐẢNG UỶ'
+                      : isDedicatedBranch
+                        ? 'ĐĂNG NHẬP CỔNG ĐẦU MỐI CHI BỘ'
+                        : 'CỔNG NỘP HỒ SƠ ĐẢNG VIÊN'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAllTabs(true)}
+                  className="text-xs font-bold text-white underline hover:text-[#F6CF62] whitespace-nowrap"
+                >
+                  Đổi cổng đăng nhập
+                </button>
+              </div>
+            )}
 
             <div className="p-6 sm:p-7">
+              {/* Missing Env Vars Alert (e.g. Vercel deployment without env vars) */}
+              {!isSupabaseConfigured && (
+                <div className="mb-5 p-4 bg-[#FDF1F2] border-2 border-[#8E1018] text-[#6b0b12] text-[14px] space-y-1.5">
+                  <div className="flex items-center gap-2 font-bold text-[#8E1018]">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>Chưa cấu hình biến môi trường Supabase trên máy chủ web</span>
+                  </div>
+                  <p className="m-0">
+                    Vào trang quản trị <strong>Vercel → Project Settings → Environment Variables</strong>, thêm 2 biến{' '}
+                    <code className="px-1 bg-white border border-[#d5969a]">VITE_SUPABASE_URL</code> và{' '}
+                    <code className="px-1 bg-white border border-[#d5969a]">VITE_SUPABASE_ANON_KEY</code> rồi bấm{' '}
+                    <strong>Redeploy</strong>.
+                  </p>
+                </div>
+              )}
+
               {/* PORTAL 1: ĐẢNG VIÊN */}
               {activeTab === 'member' && (
                 <form onSubmit={handleMemberSubmit} className="space-y-5">
@@ -318,7 +331,7 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                         Danh sách 46 hồ sơ năm 2026 chưa được khởi tạo trên Supabase.
                       </p>
                       <p className="m-0">
-                        Vui lòng chuyển sang tab <strong>3. Admin Đảng uỷ</strong> và đăng nhập tài khoản quản trị lần đầu để tự động khởi tạo đầy đủ 46 hồ sơ và mật khẩu 4 Chi bộ.
+                        Vui lòng đăng nhập <strong>Cổng Admin Đảng uỷ</strong> lần đầu để tự động khởi tạo đầy đủ 46 hồ sơ và mật khẩu 4 Chi bộ.
                       </p>
                     </div>
                   ) : (
@@ -513,7 +526,8 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                       Cổng Quản trị cao nhất – Admin Đảng uỷ
                     </h2>
                     <p className="text-[15px] text-[#594446] mt-1 mb-0">
-                      Dành cho Đảng uỷ viên phụ trách hồ sơ (đồng chí <strong>Nguyễn Tiến Dương</strong>) quản lý toàn bộ 46 hồ sơ, mật khẩu chi bộ, chốt xếp loại chính thức và xuất Excel tổng hợp.
+                      Nhập Email và Mật khẩu tài khoản quản trị của đồng chí{' '}
+                      <strong>Nguyễn Tiến Dương</strong> để vào hệ thống quản trị toàn Đảng bộ.
                     </p>
                   </div>
 
@@ -522,7 +536,7 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                       htmlFor="admin-login-email"
                       className="block text-[15px] font-bold text-[#6b0b12] mb-1.5"
                     >
-                      Email quản trị (Supabase Authentication)
+                      Email đăng nhập Admin
                     </label>
                     <div className="relative">
                       <Mail className="w-4 h-4 text-[#8E1018] absolute left-3 top-3 pointer-events-none" />
@@ -530,10 +544,11 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                         id="admin-login-email"
                         type="email"
                         autoComplete="email"
+                        autoFocus={isDedicatedAdmin}
                         value={adminEmail}
                         onChange={(e) => setAdminEmail(e.target.value)}
                         placeholder="Nhập email Admin đã tạo trên Supabase..."
-                        className="w-full pl-9 pr-3 py-2.5 border border-[#8E1018] bg-white text-[15px]"
+                        className="w-full pl-9 pr-3 py-2.5 border border-[#8E1018] bg-white text-[15px] focus:outline-none focus:ring-2 focus:ring-[#F6CF62]"
                         required
                       />
                     </div>
@@ -555,7 +570,7 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                         value={adminPassword}
                         onChange={(e) => setAdminPassword(e.target.value)}
                         placeholder="Nhập mật khẩu tài khoản Admin..."
-                        className="w-full pl-9 pr-11 py-2.5 border border-[#8E1018] bg-white text-[15px]"
+                        className="w-full pl-9 pr-11 py-2.5 border border-[#8E1018] bg-white text-[15px] focus:outline-none focus:ring-2 focus:ring-[#F6CF62]"
                         required
                       />
                       <button
@@ -575,15 +590,6 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                     </div>
                   </div>
 
-                  <div className="bg-[#FCF8E8] border border-[#D4A73E] p-3.5 text-[13.5px] text-[#4b3512] space-y-1">
-                    <p className="m-0 font-bold text-[#6b0b12]">
-                      Hướng dẫn lần đầu trên Supabase:
-                    </p>
-                    <p className="m-0">
-                      Vào <strong>Supabase → Authentication → Users → Add user → Create new user</strong> (tích <em>Auto Confirm User</em>) để tạo Email + Mật khẩu Admin. Khi đăng nhập lần đầu, ứng dụng tự động khởi tạo 46 hồ sơ năm 2026 và mật khẩu 4 Chi bộ.
-                    </p>
-                  </div>
-
                   {adminAuthError && (
                     <div className="p-3 bg-[#FDF1F2] border border-[#8E1018] text-[#8E1018] text-[14px] font-semibold">
                       {adminAuthError}
@@ -600,17 +606,102 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
                       ? 'Đang xác thực trên Supabase...'
                       : 'Đăng nhập Cổng Admin Đảng uỷ'}
                   </button>
+
+                  <div className="bg-[#FCF8E8] border border-[#D4A73E] p-3.5 text-[13.5px] text-[#4b3512]">
+                    Tài khoản Admin được tạo tại{' '}
+                    <strong>
+                      Supabase → Authentication → Users → Add user
+                    </strong>{' '}
+                    (tích <em>Auto Confirm User</em>). Lần đầu đăng nhập sẽ tự động khởi tạo đủ 46 hồ sơ năm 2026 và mật khẩu 4 Chi bộ.
+                  </div>
                 </form>
               )}
 
-              {/* Helpful note if opened via direct portal link */}
-              {isSinglePortalLink && (
-                <div className="mt-6 pt-3 border-t border-[#eed1d3] text-xs text-[#665052] text-center">
-                  Đang truy cập theo đường dẫn riêng của phân hệ · Đồng bộ trực tuyến qua Supabase
+              {/* Quick portal links at bottom when in dedicated mode */}
+              {!showAllTabs && (
+                <div className="mt-6 pt-3 border-t border-[#eed1d3] flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#665052]">
+                  <span>Chuyển nhanh cổng khác:</span>
+                  <button
+                    type="button"
+                    onClick={() => switchPortalUrl('member')}
+                    className={`underline font-bold ${
+                      activeTab === 'member'
+                        ? 'text-[#8E1018]'
+                        : 'text-[#594446] hover:text-[#8E1018]'
+                    }`}
+                  >
+                    Cổng Đảng viên
+                  </button>
+                  <span aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    onClick={() => switchPortalUrl('branch')}
+                    className={`underline font-bold ${
+                      activeTab === 'branch'
+                        ? 'text-[#8E1018]'
+                        : 'text-[#594446] hover:text-[#8E1018]'
+                    }`}
+                  >
+                    Đầu mối Chi bộ
+                  </button>
+                  <span aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    onClick={() => switchPortalUrl('admin')}
+                    className={`underline font-bold ${
+                      activeTab === 'admin'
+                        ? 'text-[#8E1018]'
+                        : 'text-[#594446] hover:text-[#8E1018]'
+                    }`}
+                  >
+                    Admin Đảng uỷ
+                  </button>
                 </div>
               )}
             </div>
           </div>
+
+          {/* One-time Supabase SQL Setup Banner placed BELOW the login card so login inputs stay front-and-center */}
+          {needsSchemaSetup && isSupabaseConfigured && (
+            <div className="bg-[#FCF8E8] border-2 border-[#8E1018] p-4 shadow-sm space-y-2.5">
+              <div className="flex items-center gap-2 text-[#8E1018] font-bold text-base">
+                <Database className="w-5 h-5 shrink-0" />
+                <span>Chưa chạy mã SQL khởi tạo bảng trên Supabase (làm 1 lần)</span>
+              </div>
+              <p className="text-[14px] text-[#3d2817] m-0">
+                Bấm nút dưới đây để sao chép mã SQL, dán vào{' '}
+                <strong>Supabase → SQL Editor → New query</strong> và bấm{' '}
+                <strong>Run</strong>.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleCopySql()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#8E1018] text-white font-bold text-xs sm:text-sm hover:bg-[#730B12]"
+                >
+                  {copiedSql ? (
+                    <>
+                      <Check className="w-4 h-4 text-[#F6CF62]" />
+                      Đã sao chép mã SQL
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 text-[#F6CF62]" />
+                      Sao chép mã SQL khởi tạo
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onRetryConnect}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-[#8E1018] text-[#8E1018] font-bold text-xs sm:text-sm hover:bg-[#FBF0C9]"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Kiểm tra lại kết nối
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </main>
 

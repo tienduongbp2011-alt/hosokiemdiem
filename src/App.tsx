@@ -32,7 +32,7 @@ import {
   saveManyDossiersAsAdmin,
   subscribeDossiersRealtime,
 } from './services/supabaseService';
-import { supabase } from './supabase';
+import { isSupabaseConfigured, supabase } from './supabase';
 import {
   BranchSession,
   Dossier,
@@ -68,14 +68,31 @@ const NAV_ITEMS: NavItemConfig[] = [
 function getInitialPortalFromUrl(): PortalMode {
   const params = new URLSearchParams(window.location.search);
   const cong = (params.get('cong') ?? '').trim().toLowerCase();
-  if (cong === 'dang-vien') return 'member';
-  if (cong === 'chi-bo') return 'branch';
-  if (cong === 'admin') return 'admin';
+  const path = window.location.pathname
+    .replace(/^\/+|\/+$/g, '')
+    .toLowerCase();
+  const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+  const target = cong || path || hash;
+  if (target === 'dang-vien') return 'member';
+  if (target === 'chi-bo') return 'branch';
+  if (target === 'admin') return 'admin';
   return 'gateway';
 }
 
 export default function App() {
-  const [initialPortal] = useState<PortalMode>(() => getInitialPortalFromUrl());
+  const [initialPortal, setInitialPortal] = useState<PortalMode>(() =>
+    getInitialPortalFromUrl()
+  );
+
+  useEffect(() => {
+    const onUrlChange = () => setInitialPortal(getInitialPortalFromUrl());
+    window.addEventListener('popstate', onUrlChange);
+    window.addEventListener('hashchange', onUrlChange);
+    return () => {
+      window.removeEventListener('popstate', onUrlChange);
+      window.removeEventListener('hashchange', onUrlChange);
+    };
+  }, []);
   const [session, setSession] = useState<PortalSession | null>(null);
   const [dossiers, setDossiers] = useState<Dossier[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -186,18 +203,23 @@ export default function App() {
 
   // 2. Listen to Supabase Auth state for Admin portal persistence
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
     let active = true;
 
     const checkExistingSession = async () => {
       if (initialPortal === 'member' || initialPortal === 'branch') return;
-      const { data } = await supabase.auth.getSession();
-      const user = data.session?.user;
-      if (active && user) {
-        await hydrateAdminSession(
-          user.id,
-          user.email ?? '',
-          (user.user_metadata?.full_name as string | undefined) || undefined
-        );
+      try {
+        const { data } = await supabase.auth.getSession();
+        const user = data.session?.user;
+        if (active && user) {
+          await hydrateAdminSession(
+            user.id,
+            user.email ?? '',
+            (user.user_metadata?.full_name as string | undefined) || undefined
+          );
+        }
+      } catch {
+        // Keep login gateway visible if session check fails
       }
     };
 
@@ -226,6 +248,12 @@ export default function App() {
 
   const handleSignInAdmin = async (email: string, password: string) => {
     setAdminAuthError('');
+    if (!isSupabaseConfigured) {
+      setAdminAuthError(
+        'Chưa cấu hình VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trên Vercel. Vui lòng thêm 2 biến môi trường này trong Vercel Project Settings rồi Redeploy.'
+      );
+      return;
+    }
     setAdminAuthLoading(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
