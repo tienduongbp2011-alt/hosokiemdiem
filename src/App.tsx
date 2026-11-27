@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  FileDown,
   FileSpreadsheet,
   FolderOpen,
   LayoutDashboard,
@@ -708,8 +709,18 @@ export default function App() {
           )}
         </main>
 
-        <footer className="px-4 py-3 border-t border-[#e3c8c9] bg-white text-center text-xs text-[#5c4748]">
-          Đảng bộ Trường THPT Thanh Hoà · Cổng nộp hồ sơ Đảng viên (Lưu trữ đồng bộ trên Supabase)
+        <footer className="px-4 py-3 border-t border-[#e3c8c9] bg-white text-center text-xs text-[#5c4748] flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+          <span>
+            Đảng bộ Trường THPT Thanh Hoà · Cổng nộp hồ sơ Đảng viên (Lưu trữ đồng bộ trên Supabase)
+          </span>
+          <a
+            href="/Huong_dan_su_dung_Ho_so_Kiem_diem.pdf"
+            download="Huong_dan_su_dung_Ho_so_Kiem_diem.pdf"
+            className="inline-flex items-center gap-1 font-bold text-[#8E1018] underline hover:text-[#6b0b12]"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            Tải Hướng dẫn sử dụng (PDF)
+          </a>
         </footer>
 
         <FilePreviewModal
@@ -860,6 +871,14 @@ export default function App() {
                 ? 'Quyền cao nhất cấp Đảng uỷ. Cơ sở dữ liệu và kho tệp đồng bộ trên Supabase.'
                 : `Phạm vi làm việc giới hạn trong ${session.branch}. Dữ liệu đồng bộ tức thì với Đảng uỷ.`}
             </p>
+            <a
+              href="/Huong_dan_su_dung_Ho_so_Kiem_diem.pdf"
+              download="Huong_dan_su_dung_Ho_so_Kiem_diem.pdf"
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#F6CF62] text-[#8E1018] hover:bg-[#f2c444] font-bold text-xs whitespace-nowrap no-underline"
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              Tải Hướng dẫn sử dụng (PDF)
+            </a>
             {session.type === 'admin' && (
               <button
                 type="button"

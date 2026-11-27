@@ -15,11 +15,13 @@ import {
   VOTING_CATEGORY_META,
   VotingSession,
   VotingTallyResult,
+  computeBranchRanking,
   countDossierAttachments,
   formatDateTimeVN,
   formatDateVN,
   getDossierDisplayName,
   getIndividualChecklistSummary,
+  isMultiBranchCollectiveSession,
 } from '../types';
 
 export interface ParsedExcelRow {
@@ -635,6 +637,38 @@ export function exportVotingResultToExcel(
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsResult, 'Kết quả kiểm phiếu');
+
+  if (isMultiBranchCollectiveSession(session)) {
+    const ranking = computeBranchRanking(session, tally);
+    const rankRows = ranking.rankedBranches.map((item) => ({
+      'Hạng': item.rank,
+      'Tên Chi bộ': item.candidate.name,
+      'Tự nhận mức': item.candidate.selfRatingShort || '—',
+      'Số phiếu HTXSNV': item.htxsnvCount,
+      'Tỷ lệ HTXSNV (%)': `${item.htxsnvPercent.toFixed(1)}%`,
+      'Số phiếu HTTNV': item.httnvCount,
+      'Nhận xét':
+        ranking.clearWinner?.candidate.id === item.candidate.id
+          ? 'Dẫn đầu đạt quá bán (>50%) – Đề nghị HTXSNV'
+          : item.isTopHtxsnv && ranking.tiedLeaders.length > 1
+            ? 'Đồng phiếu HTXSNV cao nhất (cần xem xét vòng 2)'
+            : item.hasMajorityHtxsnv
+              ? 'Đạt >50% HTXSNV'
+              : 'Chưa đạt quá bán HTXSNV',
+    }));
+    const wsRank = XLSX.utils.json_to_sheet(rankRows);
+    wsRank['!cols'] = [
+      { wch: 8 },
+      { wch: 24 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 44 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsRank, 'Xếp hạng Chi bộ');
+  }
+
   XLSX.utils.book_append_sheet(wb, wsInfo, 'Thông tin phiên họp');
 
   const safeUnit = session.unitKey.replace(/[^a-z0-9_-]/gi, '');

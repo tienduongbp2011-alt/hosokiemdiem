@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRightLeft,
+  Award,
   Check,
   CheckCircle2,
   ClipboardCopy,
@@ -51,9 +52,13 @@ import {
   VotingCategory,
   VotingSession,
   VotingTallyResult,
+  VotingTemplate,
   VotingVoter,
+  computeBranchRanking,
   formatDateTimeVN,
   getDossierDisplayName,
+  hasIndependentUbktRule,
+  isMultiBranchCollectiveSession,
 } from '../types';
 import { VotingPrintModal, getMajorityRating } from './VotingPrintModal';
 
@@ -71,20 +76,80 @@ interface VotingManagerPageProps {
   onNotify: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
-const ALL_CATEGORIES: VotingCategory[] = [
-  'collective_branch',
-  'collective_party',
-  'collective_ubkt',
-  'individual_committee',
-  'individual_member',
-];
+type FormPreset =
+  | VotingCategory
+  | 'multi_branch_4'
+  | 'multi_branch_4_ubkt';
 
-function getAllowedCategories(
+interface FormPresetMeta {
+  label: string;
+  template: VotingTemplate;
+  description: string;
+  dbCategory: VotingCategory;
+}
+
+const FORM_PRESET_META: Record<FormPreset, FormPresetMeta> = {
+  multi_branch_4: {
+    label: 'Xếp loại 4 Chi bộ trực thuộc – Tìm Chi bộ xuất sắc nhất (Mẫu 4)',
+    template: 'mau4',
+    description:
+      'BCH Đảng uỷ bỏ phiếu đồng thời cho 4 Chi bộ (Chi bộ 1–4) trên cùng 1 phiếu Mẫu 4. Tối đa 01/04 Chi bộ đạt HTXSNV (≤ 20%) và tự động xếp hạng sau kiểm phiếu.',
+    dbCategory: 'collective_party',
+  },
+  multi_branch_4_ubkt: {
+    label: 'Xếp loại 4 Chi bộ & UBKT Đảng uỷ (gộp 5 tập thể – Mẫu 4)',
+    template: 'mau4',
+    description:
+      'BCH Đảng uỷ bỏ phiếu cùng lúc cho 4 Chi bộ trực thuộc và UBKT Đảng uỷ trong 1 phiếu Mẫu 4 (hỗ trợ giới hạn tối đa 01 Chi bộ HTXSNV và đánh giá UBKT độc lập).',
+    dbCategory: 'collective_party',
+  },
+  collective_branch: {
+    ...VOTING_CATEGORY_META.collective_branch,
+    dbCategory: 'collective_branch',
+  },
+  collective_party: {
+    ...VOTING_CATEGORY_META.collective_party,
+    dbCategory: 'collective_party',
+  },
+  collective_ubkt: {
+    ...VOTING_CATEGORY_META.collective_ubkt,
+    dbCategory: 'collective_ubkt',
+  },
+  individual_committee: {
+    ...VOTING_CATEGORY_META.individual_committee,
+    dbCategory: 'individual_committee',
+  },
+  individual_member: {
+    ...VOTING_CATEGORY_META.individual_member,
+    dbCategory: 'individual_member',
+  },
+};
+
+function isMultiBranchPreset(preset: FormPreset): boolean {
+  return preset === 'multi_branch_4' || preset === 'multi_branch_4_ubkt';
+}
+
+function getAllowedPresets(
   portalSession: AdminSession | BranchSession
-): VotingCategory[] {
-  if (portalSession.type === 'admin') return ALL_CATEGORIES;
+): FormPreset[] {
+  if (portalSession.type === 'admin') {
+    return [
+      'multi_branch_4',
+      'multi_branch_4_ubkt',
+      'collective_branch',
+      'collective_party',
+      'collective_ubkt',
+      'individual_committee',
+      'individual_member',
+    ];
+  }
   if (portalSession.unitKey === 'dang-bo') {
-    return ['collective_party', 'individual_committee'];
+    return [
+      'multi_branch_4',
+      'multi_branch_4_ubkt',
+      'collective_party',
+      'individual_committee',
+    ];
   }
   if (portalSession.unitKey === 'ubkt') {
     return ['collective_ubkt'];
@@ -92,26 +157,49 @@ function getAllowedCategories(
   return ['collective_branch', 'individual_member'];
 }
 
-function getDefaultUnitForCategory(
-  category: VotingCategory,
+function detectPresetFromSession(s: VotingSession): FormPreset {
+  if (s.template === 'mau4' && isMultiBranchCollectiveSession(s)) {
+    return s.candidates.some((c) => c.group === 'ubkt')
+      ? 'multi_branch_4_ubkt'
+      : 'multi_branch_4';
+  }
+  return s.category;
+}
+
+function getSessionCategoryDisplayLabel(s: VotingSession): string {
+  const detected = detectPresetFromSession(s);
+  return FORM_PRESET_META[detected].label;
+}
+
+function getDefaultUnitForPreset(
+  preset: FormPreset,
   portalSession: AdminSession | BranchSession
 ): UnitName {
   if (portalSession.type === 'branch') return portalSession.branch;
-  if (category === 'collective_party' || category === 'individual_committee') {
+  if (
+    preset === 'multi_branch_4' ||
+    preset === 'multi_branch_4_ubkt' ||
+    preset === 'collective_party' ||
+    preset === 'individual_committee'
+  ) {
     return 'Đảng bộ trường';
   }
-  if (category === 'collective_ubkt') {
+  if (preset === 'collective_ubkt') {
     return 'UBKT Đảng uỷ';
   }
   return 'Chi bộ 1';
 }
 
 function getDefaultTitle(
-  category: VotingCategory,
+  preset: FormPreset,
   unitName: UnitName,
   year: number
 ): string {
-  switch (category) {
+  switch (preset) {
+    case 'multi_branch_4':
+      return `Biểu quyết xếp loại 4 Chi bộ trực thuộc (Tìm Chi bộ xuất sắc nhất) năm ${year}`;
+    case 'multi_branch_4_ubkt':
+      return `Biểu quyết xếp loại 4 Chi bộ trực thuộc và UBKT Đảng uỷ năm ${year}`;
     case 'collective_branch':
       return `Biểu quyết xếp loại tập thể ${unitName} năm ${year}`;
     case 'collective_party':
@@ -126,7 +214,7 @@ function getDefaultTitle(
 }
 
 function buildAutoCandidatesAndVoters(
-  category: VotingCategory,
+  preset: FormPreset,
   unitName: UnitName,
   dossiers: Dossier[]
 ): { candidates: VotingCandidate[]; voters: VotingVoter[] } {
@@ -142,7 +230,51 @@ function buildAutoCandidatesAndVoters(
     branch: d.branch,
   });
 
-  if (category === 'collective_branch') {
+  if (preset === 'multi_branch_4' || preset === 'multi_branch_4_ubkt') {
+    const branchCandidates: VotingCandidate[] = BRANCH_LIST.map(
+      (branchName, idx) => {
+        const col = activeDossiers.find(
+          (d) => d.type === 'collective' && d.branch === branchName
+        );
+        const selfRaw =
+          col?.branchProposedRating || col?.selfProposedRating || '';
+        return {
+          id: col?.id ?? `cand_${UNIT_KEY_MAP[branchName]}`,
+          dossierId: col?.id,
+          stt: idx + 1,
+          name: branchName,
+          position: '',
+          selfRatingShort: selfRaw ? RATING_TO_SHORT[selfRaw] ?? '' : '',
+          group: 'branch',
+        };
+      }
+    );
+
+    if (preset === 'multi_branch_4_ubkt') {
+      const ubktCol = activeDossiers.find(
+        (d) => d.type === 'collective' && d.unitKey === 'ubkt'
+      );
+      const ubktSelfRaw =
+        ubktCol?.branchProposedRating || ubktCol?.selfProposedRating || '';
+      branchCandidates.push({
+        id: ubktCol?.id ?? 'cand_ubkt',
+        dossierId: ubktCol?.id,
+        stt: branchCandidates.length + 1,
+        name: 'Uỷ ban Kiểm tra Đảng uỷ',
+        position: '',
+        selfRatingShort: ubktSelfRaw ? RATING_TO_SHORT[ubktSelfRaw] ?? '' : '',
+        group: 'ubkt',
+      });
+    }
+
+    const defaultBchVoters = leaders.length > 0 ? leaders : allIndividuals;
+    return {
+      candidates: branchCandidates,
+      voters: defaultBchVoters.map(toVoter),
+    };
+  }
+
+  if (preset === 'collective_branch') {
     const branchCollective = activeDossiers.find(
       (d) => d.type === 'collective' && d.branch === unitName
     );
@@ -166,7 +298,7 @@ function buildAutoCandidatesAndVoters(
     };
   }
 
-  if (category === 'collective_party') {
+  if (preset === 'collective_party') {
     const partyCollective = activeDossiers.find(
       (d) => d.type === 'collective' && d.unitKey === 'dang-bo'
     );
@@ -189,7 +321,7 @@ function buildAutoCandidatesAndVoters(
     };
   }
 
-  if (category === 'collective_ubkt') {
+  if (preset === 'collective_ubkt') {
     const ubktCollective = activeDossiers.find(
       (d) => d.type === 'collective' && d.unitKey === 'ubkt'
     );
@@ -213,7 +345,7 @@ function buildAutoCandidatesAndVoters(
     };
   }
 
-  if (category === 'individual_committee') {
+  if (preset === 'individual_committee') {
     const source = leaders.length > 0 ? leaders : allIndividuals.slice(0, 7);
     return {
       candidates: source.map((d, idx) => ({
@@ -278,16 +410,17 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
   // Create / Edit form state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formCategory, setFormCategory] = useState<VotingCategory>(
-    () => getAllowedCategories(session)[0]
+  const [formPreset, setFormPreset] = useState<FormPreset>(
+    () => getAllowedPresets(session)[0]
   );
   const [formUnitName, setFormUnitName] = useState<UnitName>(() =>
-    getDefaultUnitForCategory(getAllowedCategories(session)[0], session)
+    getDefaultUnitForPreset(getAllowedPresets(session)[0], session)
   );
   const [formTitle, setFormTitle] = useState('');
   const [formMeetingDate, setFormMeetingDate] = useState(getDefaultMeetingDate);
   const [formHtxsnvMode, setFormHtxsnvMode] = useState<HtxsnvMode>('warn');
   const [formMaxPercent, setFormMaxPercent] = useState<number>(20);
+  const [formUbktIndependent, setFormUbktIndependent] = useState<boolean>(true);
   const [formCandidates, setFormCandidates] = useState<VotingCandidate[]>([]);
   const [formVoters, setFormVoters] = useState<VotingVoter[]>([]);
   const [newVoterName, setNewVoterName] = useState('');
@@ -304,10 +437,7 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
   const [isMutating, setIsMutating] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  const allowedCategories = useMemo(
-    () => getAllowedCategories(session),
-    [session]
-  );
+  const allowedPresets = useMemo(() => getAllowedPresets(session), [session]);
 
   // Subscribe Realtime to Supabase voting tables
   useEffect(() => {
@@ -401,20 +531,37 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
     }
   };
 
+  const applyPresetDefaults = (preset: FormPreset) => {
+    if (preset === 'multi_branch_4') {
+      setFormHtxsnvMode('strict');
+      setFormMaxPercent(20);
+      setFormUbktIndependent(false);
+    } else if (preset === 'multi_branch_4_ubkt') {
+      setFormHtxsnvMode('strict');
+      setFormMaxPercent(40);
+      setFormUbktIndependent(true);
+    } else if (FORM_PRESET_META[preset].template === 'mau5') {
+      setFormHtxsnvMode('warn');
+      setFormMaxPercent(20);
+      setFormUbktIndependent(false);
+    } else {
+      setFormHtxsnvMode('off');
+      setFormMaxPercent(20);
+      setFormUbktIndependent(false);
+    }
+  };
+
   // Open Create Form
   const openCreateForm = () => {
-    const cat = allowedCategories[0];
-    const unit = getDefaultUnitForCategory(cat, session);
-    const auto = buildAutoCandidatesAndVoters(cat, unit, dossiers);
+    const preset = allowedPresets[0];
+    const unit = getDefaultUnitForPreset(preset, session);
+    const auto = buildAutoCandidatesAndVoters(preset, unit, dossiers);
     setEditingId(null);
-    setFormCategory(cat);
+    setFormPreset(preset);
     setFormUnitName(unit);
-    setFormTitle(getDefaultTitle(cat, unit, DEFAULT_YEAR));
+    setFormTitle(getDefaultTitle(preset, unit, DEFAULT_YEAR));
     setFormMeetingDate(getDefaultMeetingDate());
-    setFormHtxsnvMode(
-      VOTING_CATEGORY_META[cat].template === 'mau5' ? 'warn' : 'off'
-    );
-    setFormMaxPercent(20);
+    applyPresetDefaults(preset);
     setFormCandidates(auto.candidates);
     setFormVoters(auto.voters);
     setNewVoterName('');
@@ -423,39 +570,39 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
 
   // Open Edit Form for draft session
   const openEditForm = (s: VotingSession) => {
+    const detected = detectPresetFromSession(s);
     setEditingId(s.id);
-    setFormCategory(s.category);
+    setFormPreset(detected);
     setFormUnitName(s.unitName);
     setFormTitle(s.title);
     setFormMeetingDate(s.meetingDate || getDefaultMeetingDate());
     setFormHtxsnvMode(s.htxsnvMode);
     setFormMaxPercent(s.maxHtxsnvPercent);
+    setFormUbktIndependent(hasIndependentUbktRule(s));
     setFormCandidates(s.candidates.map((c) => ({ ...c })));
     setFormVoters(s.eligibleVoters.map((v) => ({ ...v })));
     setNewVoterName('');
     setIsFormOpen(true);
   };
 
-  const handleCategoryChange = (cat: VotingCategory) => {
-    setFormCategory(cat);
-    const nextUnit = getDefaultUnitForCategory(cat, session);
+  const handlePresetChange = (preset: FormPreset) => {
+    setFormPreset(preset);
+    const nextUnit = getDefaultUnitForPreset(preset, session);
     setFormUnitName(nextUnit);
     if (!editingId) {
-      const auto = buildAutoCandidatesAndVoters(cat, nextUnit, dossiers);
-      setFormTitle(getDefaultTitle(cat, nextUnit, DEFAULT_YEAR));
+      const auto = buildAutoCandidatesAndVoters(preset, nextUnit, dossiers);
+      setFormTitle(getDefaultTitle(preset, nextUnit, DEFAULT_YEAR));
       setFormCandidates(auto.candidates);
       setFormVoters(auto.voters);
-      setFormHtxsnvMode(
-        VOTING_CATEGORY_META[cat].template === 'mau5' ? 'warn' : 'off'
-      );
+      applyPresetDefaults(preset);
     }
   };
 
   const handleUnitChange = (unit: UnitName) => {
     setFormUnitName(unit);
     if (!editingId) {
-      const auto = buildAutoCandidatesAndVoters(formCategory, unit, dossiers);
-      setFormTitle(getDefaultTitle(formCategory, unit, DEFAULT_YEAR));
+      const auto = buildAutoCandidatesAndVoters(formPreset, unit, dossiers);
+      setFormTitle(getDefaultTitle(formPreset, unit, DEFAULT_YEAR));
       setFormCandidates(auto.candidates);
       setFormVoters(auto.voters);
     }
@@ -494,8 +641,9 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
         stt: prev.length + 1,
         name: '',
         position:
-          VOTING_CATEGORY_META[formCategory].template === 'mau5' ? 'ĐV' : '',
+          FORM_PRESET_META[formPreset].template === 'mau5' ? 'ĐV' : '',
         selfRatingShort: '',
+        ...(isMultiBranchPreset(formPreset) ? { group: 'branch' as const } : {}),
       },
     ]);
   };
@@ -547,22 +695,34 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
       return;
     }
 
-    const template = VOTING_CATEGORY_META[formCategory].template;
+    const presetMeta = FORM_PRESET_META[formPreset];
+    const hasBranchAndUbkt =
+      validCandidates.some((c) => c.group === 'branch') &&
+      validCandidates.some((c) => c.group === 'ubkt');
+
+    let effectiveMaxPercent = Math.max(
+      1,
+      Math.min(100, Number(formMaxPercent) || 20)
+    );
+    if (hasBranchAndUbkt && formHtxsnvMode !== 'off') {
+      effectiveMaxPercent = formUbktIndependent ? 40 : 20;
+    }
+
     const newId =
       editingId ??
       `vote_${UNIT_KEY_MAP[formUnitName]}_${Date.now().toString(36)}`;
     const payload: VotingSession = {
       id: newId,
       title: cleanTitle,
-      template,
-      category: formCategory,
+      template: presetMeta.template,
+      category: presetMeta.dbCategory,
       unitKey: UNIT_KEY_MAP[formUnitName],
       unitName: formUnitName,
       year: DEFAULT_YEAR,
       meetingDate: formMeetingDate,
       status: openImmediately ? 'open' : 'draft',
       htxsnvMode: formHtxsnvMode,
-      maxHtxsnvPercent: Math.max(1, Math.min(100, Number(formMaxPercent) || 20)),
+      maxHtxsnvPercent: effectiveMaxPercent,
       candidates: validCandidates,
       eligibleVoters: formVoters,
       createdBy:
@@ -831,28 +991,28 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
           </div>
 
           <div className="p-5 space-y-5">
-            {/* Step 1: Category & Unit */}
+            {/* Step 1: Category / Preset & Unit */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-bold text-[#6b0b12] mb-1.5">
                   1. Chọn loại phiên biểu quyết (Mẫu 4 / Mẫu 5)
                 </label>
                 <select
-                  value={formCategory}
+                  value={formPreset}
                   onChange={(e) =>
-                    handleCategoryChange(e.target.value as VotingCategory)
+                    handlePresetChange(e.target.value as FormPreset)
                   }
                   disabled={Boolean(editingId)}
                   className="w-full px-3 py-2 border border-[#8E1018] bg-white text-[15px] font-bold disabled:bg-[#f4eee9]"
                 >
-                  {allowedCategories.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {VOTING_CATEGORY_META[cat].label}
+                  {allowedPresets.map((preset) => (
+                    <option key={preset} value={preset}>
+                      {FORM_PRESET_META[preset].label}
                     </option>
                   ))}
                 </select>
                 <p className="text-xs text-[#5c4748] mt-1 mb-0">
-                  {VOTING_CATEGORY_META[formCategory].description}
+                  {FORM_PRESET_META[formPreset].description}
                 </p>
               </div>
 
@@ -861,9 +1021,10 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                   2. Đơn vị tổ chức
                 </label>
                 {session.type === 'branch' ||
-                formCategory === 'collective_party' ||
-                formCategory === 'collective_ubkt' ||
-                formCategory === 'individual_committee' ? (
+                isMultiBranchPreset(formPreset) ||
+                formPreset === 'collective_party' ||
+                formPreset === 'collective_ubkt' ||
+                formPreset === 'individual_committee' ? (
                   <input
                     type="text"
                     readOnly
@@ -878,8 +1039,8 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                     }
                     className="w-full px-3 py-2 border border-[#8E1018] bg-white text-[15px] font-bold"
                   >
-                    {(formCategory === 'collective_branch' ||
-                    formCategory === 'individual_member'
+                    {(formPreset === 'collective_branch' ||
+                    formPreset === 'individual_member'
                       ? BRANCH_LIST
                       : ALL_UNITS
                     ).map((u) => (
@@ -902,7 +1063,7 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                   type="text"
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
-                  placeholder="VD: Biểu quyết xếp loại Đảng viên Chi bộ 1 năm 2026"
+                  placeholder="VD: Biểu quyết xếp loại 4 Chi bộ trực thuộc năm 2026"
                   className="w-full px-3 py-2 border border-[#b8424a] bg-white text-[15px]"
                 />
               </div>
@@ -931,7 +1092,7 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                   className="w-full px-2.5 py-2 border border-[#b8424a] bg-white text-[14px]"
                 >
                   <option value="warn">Nhắc nhở nhẹ (Khuyên dùng)</option>
-                  <option value="strict">Chặn cứng tối đa theo %</option>
+                  <option value="strict">Chặn cứng tối đa theo quy định</option>
                   <option value="off">Không giới hạn</option>
                 </select>
               </div>
@@ -944,7 +1105,11 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                   type="number"
                   min={1}
                   max={100}
-                  disabled={formHtxsnvMode === 'off'}
+                  disabled={
+                    formHtxsnvMode === 'off' ||
+                    (formPreset === 'multi_branch_4_ubkt' &&
+                      formCandidates.some((c) => c.group === 'ubkt'))
+                  }
                   value={formMaxPercent}
                   onChange={(e) =>
                     setFormMaxPercent(Number(e.target.value) || 20)
@@ -954,19 +1119,58 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
               </div>
             </div>
 
+            {/* Special Rule Box for Combined 4 Chi bộ / 4 Chi bộ + UBKT */}
+            {isMultiBranchPreset(formPreset) && (
+              <div className="bg-[#FDF6DE] border border-[#C8941A] p-3.5 space-y-2 text-sm text-[#4b3512]">
+                <div className="font-bold text-[#8E1018] flex items-center gap-1.5">
+                  <Award className="w-4 h-4 shrink-0" />
+                  <span>
+                    Cơ chế bỏ phiếu gộp tìm Chi bộ Hoàn thành xuất sắc nhiệm vụ
+                  </span>
+                </div>
+                <p className="m-0 text-xs leading-relaxed">
+                  Mỗi đồng chí Đảng uỷ viên bỏ phiếu đánh giá tất cả tập thể trong{' '}
+                  <strong>01 phiếu Mẫu 4 duy nhất</strong>. Với 4 Chi bộ trực thuộc, tỷ lệ tối đa 20% tương ứng{' '}
+                  <strong>tối đa 01 Chi bộ được chọn mức HTXSNV</strong> trên mỗi lá phiếu. Khi chốt phiên, hệ thống tự động xếp hạng 4 Chi bộ theo số phiếu HTXSNV (cảnh báo nếu bằng phiếu hoặc chưa quá bán).
+                </p>
+                {(formPreset === 'multi_branch_4_ubkt' ||
+                  formCandidates.some((c) => c.group === 'ubkt')) &&
+                  formHtxsnvMode !== 'off' && (
+                    <label className="flex items-start gap-2 pt-1 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={formUbktIndependent}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setFormUbktIndependent(checked);
+                          setFormMaxPercent(checked ? 40 : 20);
+                        }}
+                        className="mt-0.5 accent-[#8E1018] w-4 h-4"
+                      />
+                      <span className="text-xs font-bold text-[#261617]">
+                        Chỉ giới hạn tối đa 01 HTXSNV trong nhóm 4 Chi bộ — đánh giá UBKT Đảng uỷ độc lập (khuyên dùng).
+                        <span className="block font-normal text-[#5c4748]">
+                          Nếu bỏ chọn, cả 5 tập thể (4 Chi bộ + UBKT) sẽ dùng chung giới hạn tối đa 01 mức HTXSNV trên toàn phiếu.
+                        </span>
+                      </span>
+                    </label>
+                  )}
+              </div>
+            )}
+
             {/* Step 3: Candidates Editor */}
             <div className="border border-[#d5969a] p-4 bg-[#FAF8F3] space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h4 className="text-base font-bold text-[#6b0b12] m-0">
                     3. Danh sách đối tượng trên phiếu (
-                    {VOTING_CATEGORY_META[formCategory].template === 'mau4'
+                    {FORM_PRESET_META[formPreset].template === 'mau4'
                       ? 'Mẫu 4 – Tập thể'
                       : 'Mẫu 5 – Cá nhân'}
                     ) — {formCandidates.length} dòng
                   </h4>
                   <p className="text-xs text-[#5c4748] m-0">
-                    Tự động nạp từ danh sách hồ sơ năm {DEFAULT_YEAR}. Có thể chỉnh sửa chức vụ (P.BTĐU, ĐUV-BTCB, P.BTCB, CUV, ĐV...), mức tự nhận hoặc thêm/bớt dòng.
+                    Tự động nạp từ danh sách hồ sơ năm {DEFAULT_YEAR}. Có thể chỉnh sửa tên, mức tự nhận hoặc thêm/bớt dòng.
                   </p>
                 </div>
                 <button
@@ -985,12 +1189,16 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                     <tr>
                       <th className="w-12 text-center">STT</th>
                       <th className="min-w-[220px]">
-                        {VOTING_CATEGORY_META[formCategory].template === 'mau4'
+                        {FORM_PRESET_META[formPreset].template === 'mau4'
                           ? 'Tên tổ chức đảng, tập thể'
                           : 'Họ và tên'}
                       </th>
-                      {VOTING_CATEGORY_META[formCategory].template ===
-                        'mau5' && <th className="w-36">Chức vụ</th>}
+                      {isMultiBranchPreset(formPreset) && (
+                        <th className="w-44">Nhóm xếp hạng</th>
+                      )}
+                      {FORM_PRESET_META[formPreset].template === 'mau5' && (
+                        <th className="w-36">Chức vụ</th>
+                      )}
                       <th className="w-40">Tự nhận mức</th>
                       <th className="w-16 text-center">Xoá</th>
                     </tr>
@@ -1018,8 +1226,32 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                             className="w-full px-2 py-1 border border-[#d5969a] bg-white text-[14px] font-bold"
                           />
                         </td>
-                        {VOTING_CATEGORY_META[formCategory].template ===
-                          'mau5' && (
+                        {isMultiBranchPreset(formPreset) && (
+                          <td>
+                            <select
+                              value={cand.group ?? 'branch'}
+                              onChange={(e) =>
+                                setFormCandidates((prev) =>
+                                  prev.map((item) =>
+                                    item.id === cand.id
+                                      ? {
+                                          ...item,
+                                          group: e.target.value as
+                                            | 'branch'
+                                            | 'ubkt',
+                                        }
+                                      : item
+                                  )
+                                )
+                              }
+                              className="w-full px-2 py-1 border border-[#d5969a] bg-white text-[13px] font-bold"
+                            >
+                              <option value="branch">Nhóm 4 Chi bộ</option>
+                              <option value="ubkt">UBKT (Độc lập)</option>
+                            </select>
+                          </td>
+                        )}
+                        {FORM_PRESET_META[formPreset].template === 'mau5' && (
                           <td>
                             <input
                               type="text"
@@ -1286,8 +1518,14 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                   >
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <span className="text-xs font-bold text-[#8E1018] uppercase">
-                        {s.template === 'mau4' ? 'Mẫu 4' : 'Mẫu 5'} ·{' '}
-                        {s.unitName}
+                        {isMultiBranchCollectiveSession(s)
+                          ? s.candidates.some((c) => c.group === 'ubkt')
+                            ? 'Mẫu 4 (4 Chi bộ + UBKT)'
+                            : 'Mẫu 4 (Gộp 4 Chi bộ)'
+                          : s.template === 'mau4'
+                            ? 'Mẫu 4'
+                            : 'Mẫu 5'}{' '}
+                        · {s.unitName}
                       </span>
                       <span
                         className={`text-[11px] font-bold px-2 py-0.5 whitespace-nowrap ${statusBadge.cls}`}
@@ -1318,7 +1556,7 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                 <div className="bg-[#FDF6DE] px-5 py-4 border-b border-[#b8424a] flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="text-xs font-bold text-[#8E1018] uppercase">
-                      {VOTING_CATEGORY_META[selectedSession.category].label} ·{' '}
+                      {getSessionCategoryDisplayLabel(selectedSession)} ·{' '}
                       {selectedSession.unitName}
                     </div>
                     <h3 className="text-xl font-bold text-[#261617] mt-0.5 mb-1">
@@ -1333,9 +1571,21 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                         Tỷ lệ HTXSNV:{' '}
                         {selectedSession.htxsnvMode === 'off'
                           ? 'Không giới hạn'
-                          : selectedSession.htxsnvMode === 'strict'
-                            ? `Chặn cứng ≤ ${selectedSession.maxHtxsnvPercent}%`
-                            : `Nhắc nhở ≤ ${selectedSession.maxHtxsnvPercent}%`}
+                          : hasIndependentUbktRule(selectedSession)
+                            ? `${
+                                selectedSession.htxsnvMode === 'strict'
+                                  ? 'Chặn cứng'
+                                  : 'Nhắc nhở'
+                              } tối đa 01/04 Chi bộ HTXSNV · UBKT đánh giá độc lập`
+                            : isMultiBranchCollectiveSession(selectedSession)
+                              ? `${
+                                  selectedSession.htxsnvMode === 'strict'
+                                    ? 'Chặn cứng'
+                                    : 'Nhắc nhở'
+                                } tối đa 01 tập thể HTXSNV (≤ ${selectedSession.maxHtxsnvPercent}%)`
+                              : selectedSession.htxsnvMode === 'strict'
+                                ? `Chặn cứng ≤ ${selectedSession.maxHtxsnvPercent}%`
+                                : `Nhắc nhở ≤ ${selectedSession.maxHtxsnvPercent}%`}
                       </span>
                     </div>
                   </div>
@@ -1521,6 +1771,219 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                 </div>
               </div>
 
+              {/* CLOSED SESSION: AUTOMATIC RANKING CARD (FOR MULTI-BRANCH MẪU 4) */}
+              {selectedSession.status === 'closed' &&
+                tally &&
+                isMultiBranchCollectiveSession(selectedSession) &&
+                (() => {
+                  const ranking = computeBranchRanking(selectedSession, tally);
+                  const ubktMajority = ranking.ubktCounts
+                    ? getMajorityRating(
+                        ranking.ubktCounts,
+                        ranking.totalBallots
+                      )
+                    : null;
+                  return (
+                    <div className="bg-white border-2 border-[#8E1018] shadow-sm">
+                      <div className="bg-[#FDF6DE] px-5 py-3 border-b-2 border-[#C8941A] flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-bold text-base text-[#8E1018] flex items-center gap-2">
+                          <Award className="w-5 h-5 shrink-0" />
+                          <span>
+                            BẢNG XẾP HẠNG TÌM CHI BỘ HOÀN THÀNH XUẤT SẮC NHIỆM VỤ
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-[#6b0b12]">
+                          Chỉ tiêu tối đa: 01/04 Chi bộ (≤ 20%)
+                        </span>
+                      </div>
+
+                      <div className="p-4 space-y-3.5">
+                        {/* Conclusion Banner */}
+                        {ranking.totalBallots === 0 ? (
+                          <div className="p-3 bg-[#FAF8F3] border border-[#d5969a] text-sm text-[#594446]">
+                            Chưa có phiếu bầu hợp lệ nào trong phiên này.
+                          </div>
+                        ) : ranking.clearWinner ? (
+                          <div className="p-3.5 bg-[#F2FBF5] border-2 border-[#1D6B3E] text-sm text-[#144d2c] flex items-start gap-2.5">
+                            <CheckCircle2 className="w-5 h-5 text-[#1D6B3E] shrink-0 mt-0.5" />
+                            <div>
+                              <div className="font-bold text-base">
+                                Chi bộ dẫn đầu và đạt quá bán phiếu HTXSNV:{' '}
+                                <span className="text-[#8E1018] underline">
+                                  {ranking.clearWinner.candidate.name}
+                                </span>
+                              </div>
+                              <div className="text-xs mt-0.5">
+                                Đạt{' '}
+                                <strong>
+                                  {ranking.clearWinner.htxsnvCount}/
+                                  {ranking.totalBallots} phiếu (
+                                  {ranking.clearWinner.htxsnvPercent.toFixed(1)}
+                                  %)
+                                </strong>{' '}
+                                ở mức Hoàn thành xuất sắc nhiệm vụ (&gt; 50% số
+                                phiếu hợp lệ) — đủ điều kiện đề xuất xếp loại{' '}
+                                <strong>Hoàn thành xuất sắc nhiệm vụ</strong>.
+                              </div>
+                            </div>
+                          </div>
+                        ) : ranking.tiedLeaders.length > 1 ? (
+                          <div className="p-3.5 bg-[#FCF8E8] border-2 border-[#C8941A] text-sm text-[#4b3512] flex items-start gap-2.5">
+                            <AlertTriangle className="w-5 h-5 text-[#8E1018] shrink-0 mt-0.5" />
+                            <div>
+                              <div className="font-bold text-[#8E1018]">
+                                Lưu ý: Có {ranking.tiedLeaders.length} Chi bộ bằng phiếu HTXSNV cao nhất (
+                                {ranking.tiedLeaders
+                                  .map((t) => t.candidate.name)
+                                  .join(', ')}{' '}
+                                — cùng {ranking.topHtxsnvCount}/
+                                {ranking.totalBallots} phiếu)
+                              </div>
+                              <div className="text-xs mt-0.5">
+                                Đề nghị BCH Đảng uỷ thảo luận và tổ chức bỏ phiếu
+                                vòng 2 giữa các Chi bộ đồng hạng để chọn đúng 01
+                                Chi bộ xuất sắc nhất.
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3.5 bg-[#FCF8E8] border-2 border-[#C8941A] text-sm text-[#4b3512] flex items-start gap-2.5">
+                            <AlertTriangle className="w-5 h-5 text-[#8E1018] shrink-0 mt-0.5" />
+                            <div>
+                              <div className="font-bold text-[#8E1018]">
+                                Chưa có Chi bộ nào đạt quá bán (&gt; 50%) phiếu
+                                mức HTXSNV
+                              </div>
+                              <div className="text-xs mt-0.5">
+                                {ranking.rankedBranches.length > 0 &&
+                                ranking.topHtxsnvCount > 0 ? (
+                                  <>
+                                    Cao nhất là{' '}
+                                    <strong>
+                                      {ranking.rankedBranches[0].candidate.name}
+                                    </strong>{' '}
+                                    với{' '}
+                                    <strong>
+                                      {ranking.topHtxsnvCount}/
+                                      {ranking.totalBallots} phiếu (
+                                      {ranking.rankedBranches[0].htxsnvPercent.toFixed(
+                                        1
+                                      )}
+                                      %)
+                                    </strong>
+                                    . Đề nghị BCH Đảng uỷ xem xét, quyết định
+                                    theo quy chế.
+                                  </>
+                                ) : (
+                                  'Không có Chi bộ nào nhận phiếu ở mức HTXSNV.'
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Ranked Branches List */}
+                        <div className="space-y-2">
+                          {ranking.rankedBranches.map((item) => {
+                            const isClearWinner =
+                              ranking.clearWinner?.candidate.id ===
+                              item.candidate.id;
+                            const isTied =
+                              ranking.tiedLeaders.length > 1 && item.isTopHtxsnv;
+                            return (
+                              <div
+                                key={item.candidate.id}
+                                className={`p-2.5 border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                                  isClearWinner
+                                    ? 'bg-[#FDF6DE] border-[#8E1018]'
+                                    : isTied
+                                      ? 'bg-[#FCF8E8] border-[#C8941A]'
+                                      : 'bg-[#FAF8F3] border-[#e3c8c9]'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-[180px]">
+                                  <span
+                                    className={`w-7 h-7 inline-flex items-center justify-center font-bold text-xs tabular-nums shrink-0 ${
+                                      item.rank === 1 && item.htxsnvCount > 0
+                                        ? 'bg-[#8E1018] text-[#F6CF62]'
+                                        : 'bg-white border border-[#b8424a] text-[#6b0b12]'
+                                    }`}
+                                  >
+                                    #{item.rank}
+                                  </span>
+                                  <div>
+                                    <div className="font-bold text-sm text-[#261617]">
+                                      {item.candidate.name}
+                                    </div>
+                                    <div className="text-[11px] text-[#5c4748]">
+                                      Tự nhận:{' '}
+                                      <strong>
+                                        {item.candidate.selfRatingShort || '—'}
+                                      </strong>{' '}
+                                      · HTTNV: {item.httnvCount} · HTNV:{' '}
+                                      {item.htnvCount}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex-1 max-w-md flex items-center gap-3">
+                                  <div className="flex-1 h-3 bg-[#efe3d5] border border-[#d5969a]">
+                                    <div
+                                      className={`h-full transition-all ${
+                                        isClearWinner
+                                          ? 'bg-[#1D6B3E]'
+                                          : 'bg-[#8E1018]'
+                                      }`}
+                                      style={{
+                                        width: `${Math.min(
+                                          100,
+                                          Math.max(0, item.htxsnvPercent)
+                                        )}%`,
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="w-36 text-right text-xs font-bold tabular-nums text-[#8E1018] shrink-0">
+                                    HTXSNV: {item.htxsnvCount}/
+                                    {ranking.totalBallots} (
+                                    {item.htxsnvPercent.toFixed(1)}%)
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Separate UBKT Summary if included */}
+                        {ranking.ubktCandidate && (
+                          <div className="pt-2 border-t border-[#e3c8c9] flex flex-wrap items-center justify-between gap-2 text-xs bg-[#FAF8F3] px-3 py-2 border">
+                            <span className="font-bold text-[#6b0b12]">
+                              Đánh giá riêng — {ranking.ubktCandidate.name}:
+                            </span>
+                            <span className="tabular-nums text-[#261617]">
+                              HTXSNV:{' '}
+                              <strong>
+                                {ranking.ubktCounts?.HTXSNV ?? 0}/
+                                {ranking.totalBallots}
+                              </strong>{' '}
+                              · HTTNV:{' '}
+                              <strong>
+                                {ranking.ubktCounts?.HTTNV ?? 0}/
+                                {ranking.totalBallots}
+                              </strong>{' '}
+                              · Mức đạt đa số:{' '}
+                              <strong className="text-[#8E1018]">
+                                {ubktMajority
+                                  ? SHORT_TO_RATING[ubktMajority]
+                                  : '—'}
+                              </strong>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
               {/* CLOSED SESSION: OFFICIAL TALLY TABLE & EXPORT / SYNC ACTIONS */}
               {selectedSession.status === 'closed' && (
                 <div className="bg-white border-2 border-[#8E1018] shadow-sm">
@@ -1618,6 +2081,12 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                                 </td>
                                 <td className="font-bold text-[#261617]">
                                   {cand.name}
+                                  {cand.group === 'ubkt' &&
+                                    hasIndependentUbktRule(selectedSession) && (
+                                      <span className="block text-[11px] font-normal text-[#6b0b12]">
+                                        (Đánh giá độc lập)
+                                      </span>
+                                    )}
                                 </td>
                                 {selectedSession.template === 'mau5' && (
                                   <td className="text-center">
@@ -1826,6 +2295,15 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                     </span>
                   </label>
                 </div>
+              ) : isMultiBranchCollectiveSession(selectedSession) ? (
+                <div className="p-3.5 bg-[#FCF8E8] border border-[#C8941A] text-sm text-[#4b3512] space-y-1.5">
+                  <div className="font-bold text-[#8E1018]">
+                    Quyền đồng bộ đồng loạt hồ sơ 4 Chi bộ &amp; UBKT
+                  </div>
+                  <p className="m-0 text-xs leading-relaxed">
+                    Tài khoản <strong>Thư ký Đảng bộ trường</strong> có thể xuất Excel kiểm phiếu và in Biên bản Mẫu 4 ngay lập tức. Do hồ sơ tập thể của Chi bộ 1–4 và UBKT thuộc quyền duyệt chung của Đảng uỷ, vui lòng dùng tài khoản <strong>Admin Đảng uỷ</strong> để bấm <strong>“Đồng bộ vào Hồ sơ”</strong> và ghi nhận <em>Mức xếp loại chính thức</em> cho tất cả tập thể chỉ với 1 bấm.
+                  </p>
+                </div>
               ) : (
                 <div className="p-3 bg-[#FCF8E8] border border-[#D4A73E] text-sm text-[#4b3512]">
                   Kết quả kiểm phiếu sẽ được tự động cập nhật vào trường{' '}
@@ -1840,18 +2318,26 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                 disabled={isSyncing}
                 className="px-4 py-1.5 bg-white border border-[#8E1018] text-[#8E1018] font-bold hover:bg-[#FBF0C9]"
               >
-                Huỷ bỏ
+                {session.type === 'branch' &&
+                isMultiBranchCollectiveSession(selectedSession)
+                  ? 'Đã hiểu'
+                  : 'Huỷ bỏ'}
               </button>
-              <button
-                type="button"
-                onClick={() => void handleExecuteSync()}
-                disabled={isSyncing}
-                className="px-5 py-1.5 bg-[#1D6B3E] text-white font-bold hover:bg-[#15522F] disabled:opacity-50"
-              >
-                {isSyncing
-                  ? 'Đang đồng bộ...'
-                  : `Đồng bộ ${syncableUpdates.length} hồ sơ`}
-              </button>
+              {!(
+                session.type === 'branch' &&
+                isMultiBranchCollectiveSession(selectedSession)
+              ) && (
+                <button
+                  type="button"
+                  onClick={() => void handleExecuteSync()}
+                  disabled={isSyncing}
+                  className="px-5 py-1.5 bg-[#1D6B3E] text-white font-bold hover:bg-[#15522F] disabled:opacity-50"
+                >
+                  {isSyncing
+                    ? 'Đang đồng bộ...'
+                    : `Đồng bộ ${syncableUpdates.length} hồ sơ`}
+                </button>
+              )}
             </div>
           </div>
         </div>

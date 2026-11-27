@@ -7,6 +7,7 @@ import {
   Database,
   Eye,
   EyeOff,
+  FileDown,
   KeyRound,
   LogIn,
   Mail,
@@ -700,6 +701,24 @@ export const PortalLoginGateway: React.FC<PortalLoginGatewayProps> = ({
               <Vote className="w-4 h-4 text-[#F6CF62]" />
               Vào bỏ phiếu ngay
             </button>
+          </div>
+
+          {/* 1-Click PDF User Manual Download Bar */}
+          <div className="bg-white border border-[#d5969a] px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-sm">
+            <div className="text-[#4d3a3b] text-center sm:text-left">
+              <strong className="text-[#8E1018]">
+                Tài liệu Hướng dẫn sử dụng (PDF – 7 trang kèm hình ảnh):
+              </strong>{' '}
+              Dành cho Đảng viên, Chi bộ 1–4, UBKT Đảng uỷ và Đảng bộ trường.
+            </div>
+            <a
+              href="/Huong_dan_su_dung_Ho_so_Kiem_diem.pdf"
+              download="Huong_dan_su_dung_Ho_so_Kiem_diem.pdf"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-[#FBF0C9] border border-[#8E1018] text-[#8E1018] font-bold text-xs sm:text-sm hover:bg-[#F6CF62] whitespace-nowrap no-underline shrink-0"
+            >
+              <FileDown className="w-4 h-4" />
+              Tải Hướng dẫn (PDF)
+            </a>
           </div>
 
           {/* One-time Supabase SQL Setup Banner placed BELOW the login card so login inputs stay front-and-center */}

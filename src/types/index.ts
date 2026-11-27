@@ -473,6 +473,7 @@ export interface VotingCandidate {
   name: string;
   position: string; // e.g., P.BTĐU, ĐUV-BTCB, P.BTCB, CUV, ĐV (for Mẫu 5)
   selfRatingShort: ShortRating | '';
+  group?: 'branch' | 'ubkt'; // Dùng khi bỏ phiếu gộp 4 Chi bộ (+ UBKT) trong cùng 1 phiếu Mẫu 4
 }
 
 export interface VotingVoter {
@@ -521,4 +522,113 @@ export interface VotingTallyResult {
   totalBallots: number;
   tallies: Record<string, CandidateTally>;
 }
+
+export function isMultiBranchCollectiveSession(
+  session: VotingSession
+): boolean {
+  if (session.template !== 'mau4') return false;
+  const branchTagged = session.candidates.filter((c) => c.group === 'branch');
+  if (branchTagged.length >= 2) return true;
+  return session.candidates.length >= 2;
+}
+
+export function hasIndependentUbktRule(session: VotingSession): boolean {
+  if (session.template !== 'mau4') return false;
+  const hasBranch = session.candidates.some((c) => c.group === 'branch');
+  const hasUbkt = session.candidates.some((c) => c.group === 'ubkt');
+  return hasBranch && hasUbkt && session.maxHtxsnvPercent >= 40;
+}
+
+export interface BranchRankingItem {
+  candidate: VotingCandidate;
+  htxsnvCount: number;
+  htxsnvPercent: number;
+  httnvCount: number;
+  htnvCount: number;
+  khtnvCount: number;
+  rank: number;
+  isTopHtxsnv: boolean;
+  hasMajorityHtxsnv: boolean;
+}
+
+export interface BranchRankingSummary {
+  rankedBranches: BranchRankingItem[];
+  ubktCandidate?: VotingCandidate;
+  ubktCounts?: CandidateTally;
+  topHtxsnvCount: number;
+  tiedLeaders: BranchRankingItem[];
+  clearWinner: BranchRankingItem | null;
+  totalBallots: number;
+}
+
+export function computeBranchRanking(
+  session: VotingSession,
+  tally: VotingTallyResult
+): BranchRankingSummary {
+  const totalBallots = tally.totalBallots;
+  const hasExplicitBranch = session.candidates.some(
+    (c) => c.group === 'branch'
+  );
+  const branchCandidates = hasExplicitBranch
+    ? session.candidates.filter((c) => c.group === 'branch')
+    : session.candidates.filter((c) => c.group !== 'ubkt');
+  const ubktCandidate = session.candidates.find((c) => c.group === 'ubkt');
+
+  const items: BranchRankingItem[] = branchCandidates.map((cand) => {
+    const counts = tally.tallies[cand.id];
+    const htxsnvCount = counts?.HTXSNV ?? 0;
+    const httnvCount = counts?.HTTNV ?? 0;
+    const htnvCount = counts?.HTNV ?? 0;
+    const khtnvCount = counts?.KHTNV ?? 0;
+    const htxsnvPercent =
+      totalBallots > 0 ? (htxsnvCount / totalBallots) * 100 : 0;
+    return {
+      candidate: cand,
+      htxsnvCount,
+      htxsnvPercent,
+      httnvCount,
+      htnvCount,
+      khtnvCount,
+      rank: 1,
+      isTopHtxsnv: false,
+      hasMajorityHtxsnv: totalBallots > 0 && htxsnvCount > totalBallots / 2,
+    };
+  });
+
+  items.sort((a, b) => {
+    if (b.htxsnvCount !== a.htxsnvCount) return b.htxsnvCount - a.htxsnvCount;
+    if (b.httnvCount !== a.httnvCount) return b.httnvCount - a.httnvCount;
+    return a.candidate.stt - b.candidate.stt;
+  });
+
+  const topHtxsnvCount = items.length > 0 ? items[0].htxsnvCount : 0;
+  items.forEach((item, idx) => {
+    if (idx === 0) {
+      item.rank = 1;
+    } else if (item.htxsnvCount === items[idx - 1].htxsnvCount) {
+      item.rank = items[idx - 1].rank;
+    } else {
+      item.rank = idx + 1;
+    }
+    item.isTopHtxsnv = topHtxsnvCount > 0 && item.htxsnvCount === topHtxsnvCount;
+  });
+
+  const tiedLeaders =
+    topHtxsnvCount > 0 ? items.filter((i) => i.isTopHtxsnv) : [];
+  const clearWinner =
+    tiedLeaders.length === 1 && tiedLeaders[0].hasMajorityHtxsnv
+      ? tiedLeaders[0]
+      : null;
+
+  return {
+    rankedBranches: items,
+    ubktCandidate,
+    ubktCounts: ubktCandidate ? tally.tallies[ubktCandidate.id] : undefined,
+    topHtxsnvCount,
+    tiedLeaders,
+    clearWinner,
+    totalBallots,
+  };
+}
+
 

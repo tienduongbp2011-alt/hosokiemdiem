@@ -6,6 +6,8 @@ import {
   ShortRating,
   VotingSession,
   VotingTallyResult,
+  computeBranchRanking,
+  isMultiBranchCollectiveSession,
 } from '../types';
 
 interface VotingPrintModalProps {
@@ -306,6 +308,61 @@ export const VotingPrintModal: React.FC<VotingPrintModalProps> = ({
               })}
             </tbody>
           </table>
+
+          {/* Branch Ranking Conclusion for Multi-Branch Collective Mẫu 4 */}
+          {mode === 'minutes' &&
+            tally &&
+            isMultiBranchCollectiveSession(session) && (() => {
+              const ranking = computeBranchRanking(session, tally);
+              return (
+                <div className="mt-4 border border-black p-3 text-[13.5px] space-y-1">
+                  <div className="font-bold uppercase">
+                    TỔNG HỢP XẾP HẠNG PHIẾU “HOÀN THÀNH XUẤT SẮC NHIỆM VỤ” CÁC CHI BỘ:
+                  </div>
+                  <ol className="m-0 pl-5 space-y-0.5">
+                    {ranking.rankedBranches.map((item) => (
+                      <li key={item.candidate.id}>
+                        <strong>{item.candidate.name}:</strong>{' '}
+                        {item.htxsnvCount}/{ranking.totalBallots} phiếu HTXSNV (
+                        {item.htxsnvPercent.toFixed(1)}%)
+                        {item.hasMajorityHtxsnv &&
+                          ranking.clearWinner?.candidate.id ===
+                            item.candidate.id && (
+                            <strong> — Dẫn đầu đạt quá bán (&gt;50%)</strong>
+                          )}
+                      </li>
+                    ))}
+                  </ol>
+                  <div className="pt-1 italic">
+                    {ranking.clearWinner ? (
+                      <>
+                        <strong>Kết luận:</strong> Tập thể{' '}
+                        <strong>{ranking.clearWinner.candidate.name}</strong>{' '}
+                        đạt số phiếu HTXSNV cao nhất và trên 50% (
+                        {ranking.clearWinner.htxsnvCount}/{ranking.totalBallots}{' '}
+                        phiếu — {ranking.clearWinner.htxsnvPercent.toFixed(1)}%).
+                      </>
+                    ) : ranking.tiedLeaders.length > 1 ? (
+                      <>
+                        <strong>Lưu ý:</strong> Có{' '}
+                        {ranking.tiedLeaders.length} Chi bộ đồng số phiếu HTXSNV
+                        cao nhất (
+                        {ranking.tiedLeaders
+                          .map((t) => t.candidate.name)
+                          .join(', ')}
+                        : {ranking.topHtxsnvCount}/{ranking.totalBallots} phiếu)
+                        — đề nghị BCH Đảng uỷ thảo luận hoặc biểu quyết vòng 2.
+                      </>
+                    ) : (
+                      <>
+                        <strong>Lưu ý:</strong> Chưa có Chi bộ nào đạt quá bán
+                        (&gt;50%) số phiếu HTXSNV.
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
           {/* Footer / Signatures */}
           {mode === 'blank' ? (

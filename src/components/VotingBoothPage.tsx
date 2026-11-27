@@ -21,6 +21,8 @@ import {
   VoterAttendance,
   VotingSession,
   VotingVoter,
+  hasIndependentUbktRule,
+  isMultiBranchCollectiveSession,
 } from '../types';
 import { HammerSickleIcon } from './HammerSickleIcon';
 
@@ -118,39 +120,67 @@ export const VotingBoothPage: React.FC<VotingBoothPageProps> = ({
     });
   }, [activeSession, voterSearch]);
 
-  // Compute HTXSNV limit stats
+  // Compute HTXSNV limit stats (with special support for 4 Chi bộ + independent UBKT)
   const totalCandidates = activeSession?.candidates.length ?? 0;
+  const isMultiBranch = activeSession
+    ? isMultiBranchCollectiveSession(activeSession)
+    : false;
+  const ubktIndependent = activeSession
+    ? hasIndependentUbktRule(activeSession)
+    : false;
+
+  const branchCandidates = activeSession
+    ? activeSession.candidates.filter((c) => c.group === 'branch')
+    : [];
   const filledCount = activeSession
     ? activeSession.candidates.filter((c) => Boolean(choices[c.id])).length
     : 0;
   const htxsnvSelectedCount = activeSession
     ? activeSession.candidates.filter((c) => choices[c.id] === 'HTXSNV').length
     : 0;
-  const maxHtxsnvAllowed =
-    activeSession && totalCandidates >= 2
+  const branchHtxsnvCount = ubktIndependent
+    ? branchCandidates.filter((c) => choices[c.id] === 'HTXSNV').length
+    : htxsnvSelectedCount;
+
+  const maxHtxsnvAllowed = ubktIndependent
+    ? 1
+    : activeSession && totalCandidates >= 2
       ? Math.max(
           1,
           Math.floor((totalCandidates * activeSession.maxHtxsnvPercent) / 100)
         )
       : totalCandidates;
+
+  const activeTrackedCount = ubktIndependent
+    ? branchHtxsnvCount
+    : htxsnvSelectedCount;
+
   const exceedsHtxsnv =
     Boolean(activeSession) &&
     activeSession!.htxsnvMode !== 'off' &&
     totalCandidates >= 2 &&
-    htxsnvSelectedCount > maxHtxsnvAllowed;
+    activeTrackedCount > maxHtxsnvAllowed;
 
   const handleSelectChoice = (candId: string, rating: ShortRating) => {
     if (!activeSession) return;
+    const cand = activeSession.candidates.find((c) => c.id === candId);
+    const subjectToCap = !ubktIndependent || cand?.group === 'branch';
+
     if (
       rating === 'HTXSNV' &&
+      subjectToCap &&
       activeSession.htxsnvMode === 'strict' &&
       totalCandidates >= 2 &&
       choices[candId] !== 'HTXSNV' &&
-      htxsnvSelectedCount >= maxHtxsnvAllowed
+      activeTrackedCount >= maxHtxsnvAllowed
     ) {
       onNotify(
         'error',
-        `Phiên này giới hạn tối đa ${maxHtxsnvAllowed} mức Hoàn thành xuất sắc nhiệm vụ (${activeSession.maxHtxsnvPercent}%).`
+        ubktIndependent
+          ? 'Trong nhóm 4 Chi bộ trực thuộc chỉ được chọn tối đa 01 Chi bộ Hoàn thành xuất sắc nhiệm vụ (tập thể UBKT được đánh giá độc lập).'
+          : isMultiBranch
+            ? `Phiên này chỉ cho phép chọn tối đa ${maxHtxsnvAllowed} tập thể Hoàn thành xuất sắc nhiệm vụ.`
+            : `Phiên này giới hạn tối đa ${maxHtxsnvAllowed} mức Hoàn thành xuất sắc nhiệm vụ (${activeSession.maxHtxsnvPercent}%).`
       );
       return;
     }
@@ -169,7 +199,9 @@ export const VotingBoothPage: React.FC<VotingBoothPageProps> = ({
     if (activeSession.htxsnvMode === 'strict' && exceedsHtxsnv) {
       onNotify(
         'error',
-        `Số lượng chọn HTXSNV (${htxsnvSelectedCount}) vượt quá mức tối đa ${maxHtxsnvAllowed} (${activeSession.maxHtxsnvPercent}%).`
+        ubktIndependent
+          ? 'Nhóm 4 Chi bộ chỉ được chọn tối đa 01 Chi bộ mức Hoàn thành xuất sắc nhiệm vụ.'
+          : `Số lượng chọn HTXSNV (${activeTrackedCount}) vượt quá mức tối đa ${maxHtxsnvAllowed}.`
       );
       return;
     }
@@ -445,15 +477,38 @@ export const VotingBoothPage: React.FC<VotingBoothPageProps> = ({
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>
-                    Tỷ lệ Hoàn thành xuất sắc nhiệm vụ (HTXSNV): đang chọn{' '}
-                    <strong className="tabular-nums">
-                      {htxsnvSelectedCount} / {maxHtxsnvAllowed}
-                    </strong>{' '}
-                    (tối đa {activeSession.maxHtxsnvPercent}% trên {totalCandidates} đối tượng).
+                    {ubktIndependent ? (
+                      <>
+                        Quy định chọn Chi bộ xuất sắc nhất (nhóm{' '}
+                        {branchCandidates.length} Chi bộ): đang chọn{' '}
+                        <strong className="tabular-nums">
+                          {branchHtxsnvCount} / 1
+                        </strong>{' '}
+                        Chi bộ mức HTXSNV ·{' '}
+                        <strong>UBKT Đảng uỷ được đánh giá độc lập</strong>.
+                      </>
+                    ) : isMultiBranch ? (
+                      <>
+                        Quy định chọn Chi bộ Hoàn thành xuất sắc nhiệm vụ: đang chọn{' '}
+                        <strong className="tabular-nums">
+                          {activeTrackedCount} / {maxHtxsnvAllowed}
+                        </strong>{' '}
+                        tập thể (tối đa {maxHtxsnvAllowed}/{totalCandidates}).
+                      </>
+                    ) : (
+                      <>
+                        Tỷ lệ Hoàn thành xuất sắc nhiệm vụ (HTXSNV): đang chọn{' '}
+                        <strong className="tabular-nums">
+                          {activeTrackedCount} / {maxHtxsnvAllowed}
+                        </strong>{' '}
+                        (tối đa {activeSession.maxHtxsnvPercent}% trên{' '}
+                        {totalCandidates} đối tượng).
+                      </>
+                    )}
                     {exceedsHtxsnv &&
                       (activeSession.htxsnvMode === 'strict'
                         ? ' Vui lòng bỏ bớt trước khi gửi phiếu.'
-                        : ' (Lưu ý: số lượng chọn HTXSNV đang vượt tỷ lệ khuyến nghị).')}
+                        : ' (Lưu ý: số lượng chọn HTXSNV đang vượt mức khuyến nghị).')}
                   </span>
                 </div>
               </div>
@@ -550,7 +605,12 @@ export const VotingBoothPage: React.FC<VotingBoothPageProps> = ({
                             {idx + 1}.
                           </td>
                           <td className="font-bold text-[#261617]">
-                            {cand.name}
+                            <span>{cand.name}</span>
+                            {ubktIndependent && cand.group === 'ubkt' && (
+                              <span className="ml-2 text-xs font-normal italic text-[#6b0b12]">
+                                (Đánh giá độc lập)
+                              </span>
+                            )}
                           </td>
                           {activeSession.template === 'mau5' && (
                             <td className="text-center text-[14px]">
