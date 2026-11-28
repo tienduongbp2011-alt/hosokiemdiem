@@ -22,6 +22,7 @@ import {
   getDossierDisplayName,
   getIndividualChecklistSummary,
   isMultiBranchCollectiveSession,
+  sortCandidatesByTally,
 } from '../types';
 
 export interface ParsedExcelRow {
@@ -532,8 +533,9 @@ export function exportVotingResultToExcel(
     return `${count}/${totalBallots} (${pct}%)`;
   };
 
-  // Sheet 1: Kết quả kiểm phiếu
-  const resultRows = session.candidates.map((cand, index) => {
+  // Sheet 1: Kết quả kiểm phiếu (tự động sắp xếp từ cao đến thấp: HTXSNV → HTTNV)
+  const sortedCandidates = sortCandidatesByTally(session.candidates, tally);
+  const resultRows = sortedCandidates.map((cand, index) => {
     const counts = tally.tallies[cand.id];
     const htxs = counts?.HTXSNV ?? 0;
     const htt = counts?.HTTNV ?? 0;

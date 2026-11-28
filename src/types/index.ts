@@ -631,4 +631,27 @@ export function computeBranchRanking(
   };
 }
 
+export function sortCandidatesByTally(
+  candidates: VotingCandidate[],
+  tally: VotingTallyResult | null | undefined
+): VotingCandidate[] {
+  if (!tally || tally.totalBallots <= 0) {
+    return [...candidates];
+  }
+  return [...candidates].sort((a, b) => {
+    const ca = tally.tallies[a.id];
+    const cb = tally.tallies[b.id];
+    const htxsDiff = (cb?.HTXSNV ?? 0) - (ca?.HTXSNV ?? 0);
+    if (htxsDiff !== 0) return htxsDiff;
+    const httDiff = (cb?.HTTNV ?? 0) - (ca?.HTTNV ?? 0);
+    if (httDiff !== 0) return httDiff;
+    const htDiff = (cb?.HTNV ?? 0) - (ca?.HTNV ?? 0);
+    if (htDiff !== 0) return htDiff;
+    const khtDiff = (ca?.KHTNV ?? 0) - (cb?.KHTNV ?? 0);
+    if (khtDiff !== 0) return khtDiff;
+    return a.stt - b.stt;
+  });
+}
+
+
 

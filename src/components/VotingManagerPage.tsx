@@ -59,6 +59,7 @@ import {
   getDossierDisplayName,
   hasIndependentUbktRule,
   isMultiBranchCollectiveSession,
+  sortCandidatesByTally,
 } from '../types';
 import { VotingPrintModal, getMajorityRating } from './VotingPrintModal';
 
@@ -1988,9 +1989,14 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
               {selectedSession.status === 'closed' && (
                 <div className="bg-white border-2 border-[#8E1018] shadow-sm">
                   <div className="bg-[#8E1018] text-white px-5 py-3 border-b-2 border-[#F6CF62] flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-bold text-base">
-                      KẾT QUẢ KIỂM PHIẾU CHÍNH THỨC (
-                      {tally?.totalBallots ?? 0} phiếu hợp lệ)
+                    <div>
+                      <div className="font-bold text-base">
+                        KẾT QUẢ KIỂM PHIẾU CHÍNH THỨC (
+                        {tally?.totalBallots ?? 0} phiếu hợp lệ)
+                      </div>
+                      <div className="text-[11px] text-[#F6CF62]">
+                        Tự động xếp hạng từ cao đến thấp — ưu tiên phiếu HTXSNV trước, sau đó đến HTTNV
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
@@ -2066,7 +2072,10 @@ export const VotingManagerPage: React.FC<VotingManagerPageProps> = ({
                           </tr>
                         </thead>
                         <tbody>
-                          {selectedSession.candidates.map((cand, idx) => {
+                          {sortCandidatesByTally(
+                            selectedSession.candidates,
+                            tally
+                          ).map((cand, idx) => {
                             const totalBallots = tally?.totalBallots ?? 0;
                             const counts = tally?.tallies?.[cand.id];
                             const majority = getMajorityRating(

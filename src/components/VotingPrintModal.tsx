@@ -8,6 +8,7 @@ import {
   VotingTallyResult,
   computeBranchRanking,
   isMultiBranchCollectiveSession,
+  sortCandidatesByTally,
 } from '../types';
 
 interface VotingPrintModalProps {
@@ -248,7 +249,10 @@ export const VotingPrintModal: React.FC<VotingPrintModalProps> = ({
               </tr>
             </thead>
             <tbody>
-              {session.candidates.map((cand, idx) => {
+              {(mode === 'minutes'
+                ? sortCandidatesByTally(session.candidates, tally)
+                : session.candidates
+              ).map((cand, idx) => {
                 const counts = tally?.tallies?.[cand.id];
                 const majority = getMajorityRating(counts, totalBallots);
                 return (
